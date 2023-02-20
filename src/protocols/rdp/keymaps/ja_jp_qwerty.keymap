@@ -33,4 +33,7 @@ map +shift      0x2C..0x35 0x73 ~ "ZXCVBNM<>?_"
 
 map -shift      0x29            ~ 0xFF28
 map -shift      0x29            ~ 0xFF2A
-map +shift      0x29            ~ 0xFF29
+
+# changed from +shift to -shift, based on Kazuhiko Tanaka's comment from
+# 19/Jun/20 02:14 on https://issues.apache.org/jira/browse/GUACAMOLE-520
+map -shift      0x29            ~ 0xFF29
