@@ -32,6 +32,7 @@ RUN apk add --no-cache                \
         build-base                    \
         cairo-dev                     \
         cmake                         \
+        cunit-dev                     \
         git                           \
         grep                          \
         libjpeg-turbo-dev             \
@@ -39,7 +40,7 @@ RUN apk add --no-cache                \
         libtool                       \
         libwebp-dev                   \
         make                          \
-        openssl-dev                   \
+        openssl1.1-compat-dev         \
         pango-dev                     \
         pulseaudio-dev                \
         util-linux-dev

@@ -46,14 +46,13 @@ BOOL guac_rdp_pointer_new(rdpContext* context, rdpPointer* pointer) {
 
     cairo_surface_t* surface;
 
-    /* Convert to alpha cursor if mask data present */
-    if (pointer->andMaskData && pointer->xorMaskData)
-        freerdp_image_copy_from_pointer_data(data,
-                guac_rdp_get_native_pixel_format(TRUE), 0, 0, 0,
-                pointer->width, pointer->height, pointer->xorMaskData,
-                pointer->lengthXorMask, pointer->andMaskData,
-                pointer->lengthAndMask, pointer->xorBpp,
-                &context->gdi->palette);
+    /* Convert to alpha cursor using mask data */
+    freerdp_image_copy_from_pointer_data(data,
+        guac_rdp_get_native_pixel_format(TRUE), 0, 0, 0,
+        pointer->width, pointer->height, pointer->xorMaskData,
+        pointer->lengthXorMask, pointer->andMaskData,
+        pointer->lengthAndMask, pointer->xorBpp,
+        &context->gdi->palette);
 
     /* Create surface from image data */
     surface = cairo_image_surface_create_for_data(
