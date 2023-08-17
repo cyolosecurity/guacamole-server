@@ -283,7 +283,7 @@ int main(int argc, char* argv[]) {
     /* If requested, simply print version and exit, without initializing the
      * logging system, etc. */
     if (config->print_version) {
-        printf("Guacamole proxy daemon (guacd) - Cyolo build - version 1.5.1-1\n");
+        printf("Guacamole proxy daemon (guacd) - Cyolo build - version 1.5.3-1\n");
         exit(EXIT_SUCCESS);
     }
 
