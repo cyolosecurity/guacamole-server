@@ -292,7 +292,7 @@ int main(int argc, char* argv[]) {
     openlog(GUACD_LOG_NAME, LOG_PID, LOG_DAEMON);
 
     /* Log start */
-    guacd_log(GUAC_LOG_INFO, "Guacamole proxy daemon (guacd) - Cyolo build - version 1.5.1-1 started");
+    guacd_log(GUAC_LOG_INFO, "Guacamole proxy daemon (guacd) - Cyolo build - version 1.5.3-1 started");
 
     /* Get addresses for binding */
     if ((retval = getaddrinfo(config->bind_host, config->bind_port,
