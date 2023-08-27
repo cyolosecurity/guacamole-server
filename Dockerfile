@@ -22,7 +22,7 @@
 #
 
 # The Alpine Linux image that should be used as the basis for the guacd image
-ARG ALPINE_BASE_IMAGE=latest
+ARG ALPINE_BASE_IMAGE=3.18.3
 FROM alpine:${ALPINE_BASE_IMAGE} AS builder
 
 # Install build dependencies
@@ -178,8 +178,9 @@ RUN apk add --no-cache                \
         util-linux-login && \
     xargs apk add --no-cache < ${PREFIX_DIR}/DEPENDENCIES
 
+# We remove the HEALTHCHECK, as our users are not accustomed to seeing the resulting output when running docker ps
 # Checks the operating status every 5 minutes with a timeout of 5 seconds
-HEALTHCHECK --interval=5m --timeout=5s CMD nc -z 127.0.0.1 4822 || exit 1
+#HEALTHCHECK --interval=5m --timeout=5s CMD nc -z 127.0.0.1 4822 || exit 1
 
 # Create a new user guacd
 ARG UID=1000
