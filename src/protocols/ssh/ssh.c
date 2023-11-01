@@ -179,6 +179,12 @@ void* ssh_input_thread(void* data) {
 
     /* Write all data read */
     while ((bytes_read = guac_terminal_read_stdin(ssh_client->term, buffer, sizeof(buffer))) > 0) {
+        // Read data from client
+        // if (bytes_read > 0) {
+        //     printf("input: %.*s\n", bytes_read, buffer);
+        //     fflush(stdout);
+        // }
+        //
         pthread_mutex_lock(&(ssh_client->term_channel_lock));
         libssh2_channel_write(ssh_client->term_channel, buffer, bytes_read);
         pthread_mutex_unlock(&(ssh_client->term_channel_lock));
@@ -467,6 +473,14 @@ void* ssh_client_thread(void* data) {
         /* Read terminal data */
         bytes_read = libssh2_channel_read(ssh_client->term_channel,
                 buffer, sizeof(buffer));
+
+
+        // Print data received from ssh server
+        // if (bytes_read > 0) {
+        //     printf("output: %.*s\n", bytes_read, buffer);
+        //     fflush(stdout);
+        // }
+        //        
 
         pthread_mutex_unlock(&(ssh_client->term_channel_lock));
 
