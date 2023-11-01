@@ -43,6 +43,18 @@ int guac_count_occurrences(const char* string, char c) {
 
 }
 
+char guac_contains(char *buffer, int len, char c) {
+    
+    for (int i = 0; i < len; i++) {
+        if (buffer[i] == c) {
+            return 1;
+        }
+    }
+
+
+    return 0;
+}
+
 char** guac_split(const char* string, char delim) {
 
     int i = 0;
