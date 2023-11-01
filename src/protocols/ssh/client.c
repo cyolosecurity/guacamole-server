@@ -22,6 +22,7 @@
 #include "argv.h"
 #include "client.h"
 #include "common-ssh/sftp.h"
+#include "common-ssh/asciicast.h"
 #include "ssh.h"
 #include "terminal/terminal.h"
 #include "user.h"
@@ -30,6 +31,7 @@
 #include <locale.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include <guacamole/argv.h>
 #include <guacamole/client.h>
@@ -125,6 +127,10 @@ int guac_ssh_client_free_handler(guac_client* client) {
         guac_common_ssh_destroy_sftp_filesystem(ssh_client->sftp_filesystem);
         guac_common_ssh_destroy_session(ssh_client->sftp_session);
     }
+
+    /* Clean up asciicast recording */
+    if (ssh_client->ascii_recording != NULL)
+        free_asciicast_recording(ssh_client->ascii_recording);
 
     /* Clean up recording, if in progress */
     if (ssh_client->recording != NULL)

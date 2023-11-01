@@ -39,6 +39,16 @@
 size_t guac_count_occurrences(const char* string, char c);
 
 /**
+ * Checks whether a given character is in the given buffer.
+ *
+ * @param buffer The buffer to search within.
+ * @param len The length of the buffer.
+ * @param c The character to count occurrences of.
+ * @return true/false.
+ */
+char guac_contains(char* buffer, int len, char c);
+
+/**
  * Splits a string into a newly-allocated array of strings. The array itself
  * and each string within the array will eventually need to be freed through
  * calls to guac_mem_free(). The array is NULL-terminated.

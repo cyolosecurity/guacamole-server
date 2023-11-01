@@ -69,4 +69,3 @@ void guac_timestamp_msleep(int duration) {
     nanosleep(&sleep_period, NULL);
 
 }
-

@@ -22,10 +22,12 @@
 #include "argv.h"
 #include "common-ssh/sftp.h"
 #include "common-ssh/ssh.h"
+#include "common/string.h"
 #include "settings.h"
 #include "sftp.h"
 #include "ssh.h"
 #include "terminal/terminal.h"
+#include "terminal/terminal-priv.h"
 #include "ttymode.h"
 
 #ifdef ENABLE_SSH_AGENT
@@ -57,8 +59,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+
+struct timespec guac_get_time() {
+    struct timespec current;
+    if (clock_gettime(CLOCK_MONOTONIC, &current) == -1) {
+        current.tv_sec = UINT64_MAX; // indicate an error
+    }
+    
+    return current;
+}
+
+double time_diff(struct timespec t1, struct timespec t2) {
+    int64_t secs = 1000 * (t1.tv_sec - t2.tv_sec);
+    int64_t nsecs = (t1.tv_nsec - t2.tv_nsec) / 1000000;
+    double sec = (double)(secs + nsecs) / 1000.0;
+
+    return sec;
+}
 
 /**
  * Produces a new user object containing a username and password or private
@@ -177,10 +197,59 @@ void* ssh_input_thread(void* data) {
 
     char buffer[8192];
     int bytes_read;
+    double sec = 0;
 
     /* Write all data read */
     while ((bytes_read = guac_terminal_read_stdin(ssh_client->term, buffer, sizeof(buffer))) > 0) {
         pthread_mutex_lock(&(ssh_client->term_channel_lock));
+        if (ssh_client->ascii_recording != NULL) {
+            if (ssh_client->ascii_recording->epoch.tv_sec == 0 && ssh_client->ascii_recording->epoch.tv_nsec == 0) {
+                ssh_client->ascii_recording->epoch = guac_get_time();
+                if (ssh_client->ascii_recording->epoch.tv_sec == UINT64_MAX) {
+                    guac_client_log(client, GUAC_LOG_ERROR, 
+                        "failed to get current time for %s", ssh_client->ascii_recording->name);
+                    free_asciicast_recording(ssh_client->ascii_recording);
+                    ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                    goto cont;
+                }
+            }
+
+            struct timespec curr_time = guac_get_time();
+            if (curr_time.tv_sec == UINT64_MAX) {
+                guac_client_log(client, GUAC_LOG_ERROR, 
+                    "failed to get current time for %s", ssh_client->ascii_recording->name);
+                free_asciicast_recording(ssh_client->ascii_recording);
+                ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                goto cont;
+            }
+
+            sec = time_diff(curr_time, ssh_client->ascii_recording->epoch);
+
+            if (!ssh_client->ascii_recording->input_start) {
+                ssh_client->ascii_recording->input_start = true;
+
+                if (!write_cast_event(sec, "i", "start", 5, client, ssh_client->ascii_recording)) {
+                    guac_client_log(client, GUAC_LOG_ERROR, 
+                        "failed to write cast event for %s", ssh_client->ascii_recording->name);
+                    free_asciicast_recording(ssh_client->ascii_recording);
+                    ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                    goto cont;
+                }
+            }
+
+            if (guac_contains(buffer, bytes_read, '\r')) {
+                ssh_client->ascii_recording->input_start = false;
+
+                if (!write_cast_event(sec, "i", "end", 3, client, ssh_client->ascii_recording)) {
+                    guac_client_log(client, GUAC_LOG_ERROR, 
+                        "failed to write cast event for %s", ssh_client->ascii_recording->name);
+                    free_asciicast_recording(ssh_client->ascii_recording);
+                    ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                    goto cont;
+                }
+            }            
+        }
+    cont:
         libssh2_channel_write(ssh_client->term_channel, buffer, bytes_read);
         pthread_mutex_unlock(&(ssh_client->term_channel_lock));
 
@@ -191,15 +260,15 @@ void* ssh_input_thread(void* data) {
 
     /* Stop the client so that ssh_client_thread can be terminated */
     guac_client_stop(client);
-    return NULL;
 
+    return NULL;
 }
 
 void* ssh_client_thread(void* data) {
-
     guac_client* client = (guac_client*) data;
     guac_ssh_client* ssh_client = (guac_ssh_client*) client->data;
     guac_ssh_settings* settings = ssh_client->settings;
+    settings->asciicast_recording = ASCIICAST_ENABLE && (settings->recording_path != NULL);
 
     char buffer[8192];
 
@@ -229,18 +298,6 @@ void* ssh_client_thread(void* data) {
 
     char ssh_ttymodes[GUAC_SSH_TTYMODES_SIZE(1)];
 
-    /* Set up screen recording, if requested */
-    if (settings->recording_path != NULL) {
-        ssh_client->recording = guac_recording_create(client,
-                settings->recording_path,
-                settings->recording_name,
-                settings->create_recording_path,
-                !settings->recording_exclude_output,
-                !settings->recording_exclude_mouse,
-                0, /* Touch events not supported */
-                settings->recording_include_keys);
-    }
-
     /* Create terminal options with required parameters */
     guac_terminal_options* options = guac_terminal_options_create(
             settings->width, settings->height, settings->resolution);
@@ -264,6 +321,29 @@ void* ssh_client_thread(void* data) {
         guac_client_abort(client, GUAC_PROTOCOL_STATUS_SERVER_ERROR,
                 "Terminal initialization failed");
         return NULL;
+    }
+
+    if (settings->asciicast_recording) {
+        ssh_client->ascii_recording = asciicast_recording_create(settings->recording_path,
+                         settings->recording_name,
+                         ssh_client->term->term_height,
+                         ssh_client->term->term_width,
+                         settings->create_recording_path, 
+                         client);
+
+        settings->recording_path = NULL; // do not record the guac way
+    }
+
+    /* Set up screen recording, if requested */
+    if (settings->recording_path != NULL) {
+        ssh_client->recording = guac_recording_create(client,
+                settings->recording_path,
+                settings->recording_name,
+                settings->create_recording_path,
+                !settings->recording_exclude_output,
+                !settings->recording_exclude_mouse,
+                0, /* Touch events not supported */
+                settings->recording_include_keys);
     }
 
     /* Send current values of exposed arguments to owner only */
@@ -468,6 +548,42 @@ void* ssh_client_thread(void* data) {
         bytes_read = libssh2_channel_read(ssh_client->term_channel,
                 buffer, sizeof(buffer));
 
+
+        /* Capture session's stdout to cast file */
+        if (ssh_client->ascii_recording != NULL && bytes_read > 0) {
+            if (ssh_client->ascii_recording->epoch.tv_sec == 0 && ssh_client->ascii_recording->epoch.tv_nsec == 0) {
+                ssh_client->ascii_recording->epoch = guac_get_time();
+                if (ssh_client->ascii_recording->epoch.tv_sec == UINT64_MAX) {
+                    guac_client_log(client, GUAC_LOG_ERROR, 
+                        "failed to get current time for %s", ssh_client->ascii_recording->name);
+                    free_asciicast_recording(ssh_client->ascii_recording);
+                    ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                    goto cont;
+                }
+            }
+
+            struct timespec curr_time = guac_get_time();
+            if (curr_time.tv_sec == UINT64_MAX) {
+                guac_client_log(client, GUAC_LOG_ERROR, 
+                    "failed to get current time for %s", ssh_client->ascii_recording->name);
+                free_asciicast_recording(ssh_client->ascii_recording);
+                ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                goto cont;
+            }
+            
+            double sec = time_diff(curr_time, ssh_client->ascii_recording->epoch);
+
+            if (!write_cast_event(sec, "o", buffer, bytes_read, client, ssh_client->ascii_recording)) {
+                guac_client_log(client, GUAC_LOG_ERROR, 
+                    "failed to write cast event for %s", ssh_client->ascii_recording->name);
+                free_asciicast_recording(ssh_client->ascii_recording);
+                ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                goto cont;
+            }
+
+        }
+
+    cont:
         pthread_mutex_unlock(&(ssh_client->term_channel_lock));
 
         /* Attempt to write data received. Exit on failure. */
@@ -517,8 +633,14 @@ void* ssh_client_thread(void* data) {
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
 
+    if (ssh_client->ascii_recording != NULL) {
+        if (!save_asciicast_file(ssh_client->ascii_recording, client)) {
+            guac_client_log(client, GUAC_LOG_ERROR, 
+            "failed to create asciicast file for %s", ssh_client->ascii_recording->name);
+        }
+    }
+
     guac_client_log(client, GUAC_LOG_INFO, "SSH connection ended.");
+
     return NULL;
-
 }
-
