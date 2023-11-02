@@ -25,6 +25,7 @@
 #include "common/clipboard.h"
 #include "common-ssh/sftp.h"
 #include "common-ssh/ssh.h"
+#include "common-ssh/asciicast.h"
 #include "common-ssh/user.h"
 #include "settings.h"
 #include "terminal/terminal.h"
@@ -100,6 +101,8 @@ typedef struct guac_ssh_client {
      * progress.
      */
     guac_recording* recording;
+
+    asciicast_recording* ascii_recording;
 
 } guac_ssh_client ;
 
