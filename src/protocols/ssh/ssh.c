@@ -56,6 +56,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 
@@ -245,6 +246,9 @@ void* ssh_client_thread(void* data) {
                 0, /* Touch events not supported */
                 settings->recording_include_keys);
     }
+
+    // TODO: flag for asciicast record or not
+    ssh_client->ascii_recording = asciicast_recording_create();
 
     /* Create terminal options with required parameters */
     guac_terminal_options* options = guac_terminal_options_create(
@@ -475,6 +479,18 @@ void* ssh_client_thread(void* data) {
                 buffer, sizeof(buffer));
 
 
+        if (ssh_client->ascii_recording->epoch == 0) {
+            time(&ssh_client->ascii_recording->epoch);
+            ssh_client->ascii_recording->timestamp = ssh_client->ascii_recording->epoch;
+        }
+
+        time_t sec = time(NULL) - ssh_client->ascii_recording->epoch;
+
+        asciicast_event *e = asciicast_event_create(sec, 'o', buffer, bytes_read);
+        ssh_client->ascii_recording->output_events = append(ssh_client->ascii_recording->output_events, e);
+
+        ssh_client->ascii_recording->seconds = sec;
+
         // Print data received from ssh server
         // if (bytes_read > 0) {
         //     printf("output: %.*s\n", bytes_read, buffer);
@@ -530,6 +546,17 @@ void* ssh_client_thread(void* data) {
     pthread_join(input_thread, NULL);
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
+
+    // TESTING OUTPUTS:
+    asciicast_event **arr = ssh_client->ascii_recording->output_events->array;
+    size_t size = ssh_client->ascii_recording->output_events->size;
+
+    for (int i = 0; i < size; i++) {
+        printf("output %d: %.s\n", i, arr[i]->data);
+        fflush(stdout);
+    }
+
+    //
 
     guac_client_log(client, GUAC_LOG_INFO, "SSH connection ended.");
     return NULL;
