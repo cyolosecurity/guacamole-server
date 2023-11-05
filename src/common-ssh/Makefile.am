@@ -34,14 +34,16 @@ libguac_common_ssh_la_SOURCES = \
     sftp.c                      \
     ssh.c                       \
     key.c                       \
-    user.c
+    user.c                      \
+    asciicast.c
 
 noinst_HEADERS =            \
     common-ssh/buffer.h     \
     common-ssh/key.h        \
     common-ssh/sftp.h       \
     common-ssh/ssh.h        \
-    common-ssh/user.h
+    common-ssh/user.h       \
+    common-ssh/asciicast.h
 
 libguac_common_ssh_la_CFLAGS = \
     -Werror -Wall -pedantic    \
