@@ -548,6 +548,7 @@ void* ssh_client_thread(void* data) {
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
 
     // TESTING OUTPUTS:
+    guac_client_log(client, GUAC_LOG_INFO, "TEST");
     asciicast_event **arr = ssh_client->ascii_recording->output_events->array;
     size_t size = ssh_client->ascii_recording->output_events->size;
 
