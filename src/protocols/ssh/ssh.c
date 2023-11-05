@@ -577,6 +577,8 @@ void* ssh_client_thread(void* data) {
     asciicast_event **arr = ssh_client->ascii_recording->output_events->array;
     size_t size = ssh_client->ascii_recording->output_events->size;
 
+    printf("TESTINGGGGGG\n");
+    fflush(stdout);
     for (int i = 0; i < size; i++) {
         printf("output %d: %.s\n", i, arr[i]->data);
         fflush(stdout);
