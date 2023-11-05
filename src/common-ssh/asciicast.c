@@ -1,4 +1,6 @@
-#include "asciicast.h"
+#include "common-ssh/asciicast.h"
+
+#include <string.h>
 
 asciicast_event *asciicast_event_create(time_t timestamp, char mode, char *buffer, int bytes_read) {
         asciicast_event *e = (asciicast_event*)malloc(sizeof(asciicast_event));
@@ -28,6 +30,8 @@ slice* append(slice *s, asciicast_event *e) {
     }
 
     s->array[s->size++] = e;
+
+    return s;
 }
 
 void free_slice(slice *s) {
