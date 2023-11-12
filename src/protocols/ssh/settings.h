@@ -202,6 +202,8 @@ typedef struct guac_ssh_settings {
      */
     bool create_typescript_path;
 
+    bool asciicast_recording;
+
     /**
      * The path in which the screen recording should be saved, if enabled. If
      * no screen recording should be saved, this will be NULL.
