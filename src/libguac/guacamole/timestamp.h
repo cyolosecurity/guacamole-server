@@ -47,5 +47,7 @@ guac_timestamp guac_timestamp_current();
  */
 void guac_timestamp_msleep(int duration);
 
+float guac_timestamp_seconds(guac_timestamp ts);
+
 #endif
 
