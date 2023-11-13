@@ -14,7 +14,7 @@ typedef struct asciicast_event {
     /*
     the mode of the event
     */
-   char mode;
+   char* mode;
 
    /*
    the data of the event
@@ -23,7 +23,8 @@ typedef struct asciicast_event {
 
 } asciicast_event;
 
-asciicast_event *asciicast_event_create(float timestamp, char mode, char *buffer, int bytes_read);
+asciicast_event *asciicast_event_create(float timestamp, char *mode, char *buffer, int bytes_read);
+char *asciicast_event_to_json(asciicast_event *e);
 void free_asciicast_event(asciicast_event *e);
 
 typedef struct slice {
@@ -37,6 +38,7 @@ typedef struct slice {
 
 size_t slice_len(slice *s);
 slice* append(slice *s, asciicast_event *e);
+asciicast_event* get_item(slice *s, int i);
 void free_slice(slice *s);
 
 typedef struct asciicast_recording {
@@ -45,7 +47,7 @@ typedef struct asciicast_recording {
 
    guac_timestamp timestamp;
 
-   guac_timestamp seconds;
+   guac_timestamp duration;
 
    char input_start;
 
@@ -53,10 +55,13 @@ typedef struct asciicast_recording {
 
    slice *output_events;
 
-   char* path;
+   char *path;
+
+   char *name;
 
 } asciicast_recording;
 
 asciicast_recording* asciicast_recording_create(char* path, char* name);
+char *create_asciicast_header(asciicast_recording *rec);
+char save_asciicast_file(asciicast_recording *rec);
 void free_asciicast_recording(asciicast_recording *rec);
-void prepare_asciicast_file(asciicast_recording *rec);
