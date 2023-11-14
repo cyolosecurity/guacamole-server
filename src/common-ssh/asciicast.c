@@ -1,43 +1,32 @@
 #include "common-ssh/asciicast.h"
 #include "common/cJSON.h"
+#include "guacamole/recording.h"
+#include "guacamole/socket.h"
 
+#include <sys/stat.h>
+#include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #include <fcntl.h>
 
 //asciicast_event
 
-asciicast_event *asciicast_event_create(float timestamp, char* mode, char *buffer, int bytes_read) {
-        asciicast_event *e = (asciicast_event*)malloc(sizeof(asciicast_event));
-        e->timestamp = timestamp;
-
-        e->mode = malloc(strlen(mode) + 1);
-        memcpy(e->mode, mode, strlen(mode));
-        e->data[strlen(mode)] = 0;
-
-        e->data = malloc(bytes_read + 1);
-        memcpy(e->data, buffer, bytes_read);
-        e->data[bytes_read] = 0;
-
-        return e;
-}
-
-char *asciicast_event_to_json(asciicast_event *e) {
+char *asciicast_event_to_json(float timestamp, const char* mode, const char* data) {
     char *json = NULL;
     cJSON *arr = NULL;
 
-    cJSON *timestamp = cJSON_CreateNumber(e->timestamp);
-    if (timestamp == NULL) {
+    cJSON *ts = cJSON_CreateNumber(timestamp);
+    if (ts == NULL) {
         goto end;
     }
 
-    cJSON *mode = cJSON_CreateString(e->mode);
-    if (mode == NULL) {
+    cJSON *m = cJSON_CreateString(mode);
+    if (m == NULL) {
         goto end;
     }
 
-    cJSON *data = cJSON_CreateString(e->data);
-    if (data == NULL) {
+    cJSON *d = cJSON_CreateString(data);
+    if (d == NULL) {
         goto end;
     }
 
@@ -46,9 +35,9 @@ char *asciicast_event_to_json(asciicast_event *e) {
         goto end;
     }
 
-    cJSON_AddItemToArray(arr, timestamp);
-    cJSON_AddItemToArray(arr, mode);
-    cJSON_AddItemToArray(arr, data);
+    cJSON_AddItemToArray(arr, ts);
+    cJSON_AddItemToArray(arr, m);
+    cJSON_AddItemToArray(arr, d);
 
     json = cJSON_Print(arr);
 
@@ -57,27 +46,173 @@ char *asciicast_event_to_json(asciicast_event *e) {
         return json;
 }
 
-void free_asciicast_event(asciicast_event *e) {
-    free(e->mode);
-    free(e->data);
-    free(e);
-}
-
 // asciicast_recording
 
-asciicast_recording* asciicast_recording_create(char* path, char* name) {
-    asciicast_recording* rec = (asciicast_recording*)malloc(sizeof(asciicast_recording));
+asciicast_recording* asciicast_recording_create(char* path, char* name, int create_path, guac_client *client) {
+    char filename[GUAC_COMMON_RECORDING_MAX_NAME_LENGTH];
 
+    /* Create path if it does not exist, fail if impossible */
+#ifndef __MINGW32__
+    if (create_path && mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP)
+            && errno != EEXIST) {
+#else
+    if (create_path && _mkdir(path) && errno != EEXIST) {
+#endif
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Creation of recording failed: %s", strerror(errno));
+        return NULL;
+    }
+
+    /* Create tmp file that indicates a recording in progress */
+    char* ext_tmp = ".cast.tmp";
+    char tmp_name[strlen(name) + strlen(ext_tmp) + 1];
+
+    if (snprintf(tmp_name, sizeof(tmp_name), "%s%s", name, ext_tmp) != strlen(tmp_name) - 1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error creating tmp cast file name for: %s", name);
+        return NULL;
+    }
+
+    /* Attempt to open recording file */
+    int fd = guac_recording_open(path, tmp_name, filename, sizeof(filename));
+    if (fd == -1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Creation of recording failed: %s", strerror(errno));
+        return NULL;
+    }
+
+    asciicast_recording* rec = (asciicast_recording*)malloc(sizeof(asciicast_recording));
+    
     rec->name = malloc(strlen(name) + 1);
     strcpy(rec->name, name);
 
     rec->path = malloc(strlen(path) + 1);
     strcpy(rec->path, path);
     
+    rec->socket = guac_socket_open(fd);
+
+    /* Write header to the file */
+    char* header = create_asciicast_header(rec);
+    if (header == NULL) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Creation of asciicast header failed for: %s", name);
+        free_asciicast_recording(rec);
+
+        return NULL;
+    }
+
+    char header_line[strlen(header) + 2]; // +2 for \n and \0
+    if (snprintf(header_line, sizeof(header_line), "%s\n\0", header) != strlen(header) - 1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error preparing header line for: %s", name);
+        free(header);
+        free_asciicast_recording(rec);
+
+        return NULL;
+    }
+
+    free(header);
+
+    if (guac_socket_write(rec->socket, header_line, strlen(header_line) != 0)) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error writing header line to cast file: %s", name);
+        free_asciicast_recording(rec);
+
+        return NULL;
+    }
+    
     return rec;
 }
 
-// {"version":2,"width":103,"height":25,"timestamp":1699794805,"env":{"TERM":"xterm-256color"}}
+char save_asciicast_file(asciicast_recording* rec, guac_client* client) {
+    /* Create metadata file with session information */
+    if (!create_meta_file(rec, client)) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error creating meta file for : %s", rec->name);
+
+        return 0;
+    }
+
+    char* ext_tmp = ".cast.tmp";
+    char tmp_name[strlen(rec->path) + strlen(rec->name) + strlen(ext_tmp) + 1];
+
+    if (snprintf(tmp_name, sizeof(tmp_name), "%s/%s%s", rec->path, rec->name, ext_tmp) != strlen(tmp_name) - 1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error creating tmp cast file name for: %s", rec->name);
+        
+        return 0;
+    }
+
+    char* ext = ".cast";
+    char file_name[strlen(rec->path) + strlen(rec->name) + strlen(ext) + 1];
+
+    if (snprintf(file_name, sizeof(file_name), "%s/%s%s", rec->path, rec->name, ext) != strlen(file_name) - 1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error creating cast file name for: %s", rec->name);
+        
+        return 0;
+    }
+
+    /* Rename file from .cast.tmp to .cast */
+    if (rename(tmp_name, file_name) < 0) {
+        return 0;
+    }
+
+    return 1;
+}
+
+char create_meta_file(asciicast_recording* rec, guac_client* client) {
+    /* Create json header with the full information of the session */
+    char* header = create_asciicast_header(rec);
+    if (header == NULL) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error creating header for .meta file for : %s", rec->name);
+            
+        return 0;
+    }
+
+    /* Create <RECORDING_NAME>.meta string */
+    char* ext_meta = ".meta";
+    char meta[strlen(rec->path) + strlen(rec->name) + strlen(ext_meta) + 1];
+
+    if (snprintf(meta, sizeof(meta), "%s/%s%s", rec->path, rec->name, ext_meta) != strlen(meta) - 1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error creating meta file name for: %s", rec->name);
+        
+        free(header);
+        return 0;
+    }
+
+    free(header);
+
+    /* Create <RECORDING_NAME>.meta file */
+    int fd = open(meta, O_CREAT | O_WRONLY | O_APPEND); 
+    if (fd ==  -1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+            "Error opening meta file for %s", rec->name);
+        return 0;
+    }
+
+    /* Write header to .meta file */
+    if (write(fd, header, strlen(header)) < 0) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+            "Error writing header in .meta file for: %s", rec->name);
+
+        close(fd);
+        return 0;
+    }
+
+    close(fd);
+    return 1;
+} 
+
+void free_asciicast_recording(asciicast_recording *rec) {
+    guac_socket_free(rec->socket);
+    free(rec->name);
+    free(rec->path);
+    free(rec);
+}
+
 char *create_asciicast_header(asciicast_recording *rec) {
     char *json = NULL;
     cJSON *header = NULL;
@@ -126,7 +261,6 @@ char *create_asciicast_header(asciicast_recording *rec) {
     cJSON_AddItemToObject(header, "version", version);
     cJSON_AddItemToObject(header, "width", width);
     cJSON_AddItemToObject(header, "height", height);
-    cJSON_AddItemToObject(header, "duration", duration);
     cJSON_AddItemToObject(header, "timestamp", timestamp);
     cJSON_AddItemToObject(header, "env", env);
 
@@ -135,172 +269,4 @@ char *create_asciicast_header(asciicast_recording *rec) {
     end:
         cJSON_Delete(header);
         return json;
-}
-
-char save_asciicast_file(asciicast_recording *rec) {
-    // open new .cast.tmp file
-    char* ext_tmp = ".cast.tmp";
-    char tmp_name[strlen(rec->path) + strlen(rec->name) + strlen(ext_tmp) + 1];
-
-    snprintf(tmp_name, sizeof(tmp_name), "%s/%s.%s", rec->path, rec->name, ext_tmp);
-
-    int fd = open(tmp_name, O_CREAT | O_WRONLY | O_APPEND); 
-    if (fd ==  -1) {
-        return 0;
-    }
-
-    // create asciicast header
-    char *header = create_asciicast_header(rec);
-    if (header == NULL) {
-        return 0;
-    }
-
-    char header_line[strlen(header) + 2]; // +2 for \n delimiter and a null terminator
-    snprintf(header_line, sizeof(header_line), "%s\n\0", header);
-    free(header);
-
-    if (write(fd, header_line, strlen(header_line)) < 0) {
-        close(fd);
-        return 0;
-    }
-
-
-    // merge i/o events and save to file
-    int i = 0;
-    int j = 0;
-
-    while (i < slice_len(rec->input_events) && j < slice_len(rec->output_events)) {
-        asciicast_event *e;
-        char *json_event;
-
-        if (get_item(rec->input_events, i)->timestamp <= get_item(rec->output_events, j)->timestamp) {
-            e = get_item(rec->input_events, i);
-            i++;
-        } else {
-            e = get_item(rec->output_events, j);
-            j++;
-        }
-
-        json_event = asciicast_event_to_json(e);
-        if (json_event == NULL) {
-            close(fd);
-            return 0;
-        }
-
-        char event_line[strlen(json_event) + 2];
-        snprintf(event_line, sizeof(event_line), "%s\n\0", json_event);
-        free(json_event);
-
-        if (write(fd, event_line, strlen(event_line)) < 0) {
-            close(fd);
-            return 0;
-        }
-     }
-
-     while (i < slice_len(rec->input_events)) {
-       char *json_event;
-       json_event = asciicast_event_to_json(get_item(rec->input_events, i));
-       if (json_event == NULL) {
-            close(fd);
-            return 0;
-        }
-        
-        char event_line[strlen(json_event) + 2];
-        snprintf(event_line, sizeof(event_line), "%s\n\0", json_event);
-        free(json_event);
-
-        if (write(fd, event_line, strlen(event_line)) < 0) {
-            close(fd);
-            return 0;
-        }
-
-       free(json_event);
-       i++;
-     }
-
-    while (j < slice_len(rec->output_events)) {
-        char *json_event;
-        json_event = asciicast_event_to_json(get_item(rec->output_events, j));
-        if (json_event == NULL) {
-            close(fd);
-            return 0;
-        }
-       
-        char event_line[strlen(json_event) + 2];
-        snprintf(event_line, sizeof(event_line), "%s\n\0", json_event);
-        free(json_event);
-
-        if (write(fd, event_line, strlen(event_line)) < 0) {
-            close(fd);
-            return 0;
-        }
-
-       j++;
-     }
-
-    // change ext to .cast to indicate a proper dump
-    char* ext = ".cast";
-    char file_name[strlen(rec->path) + strlen(rec->name) + strlen(ext) + 1];
-
-    if (rename(tmp_name, file_name) < 0) {
-        close(fd);
-        return 0;
-    }
-
-    close(fd);
-    return 1;
-}
-
-void free_asciicast_recording(asciicast_recording *rec) {
-    free_slice(rec->output_events);
-    rec->output_events = NULL; 
-
-    free_slice(rec->input_events);
-    rec->input_events = NULL;
-
-    free(rec->name);
-    free(rec->path);
-
-    free(rec);
-}
-
-// slice
-
-size_t slice_len(slice *s) {
-    return s->size;
-}
-
-slice* append(slice *s, asciicast_event *e) {
-    if (s == NULL) {
-        s = (slice*)malloc(sizeof(slice));
-        s->array = malloc(2 * sizeof(asciicast_event*));
-        s->size = 0;
-        s->cap = 2;
-    }
-
-    if (s->size == s->cap) {
-        s->cap *= 2;
-        s->array = realloc(s->array, s->cap * sizeof(asciicast_event*));
-    }
-
-    s->array[s->size++] = e;
-
-    return s;
-}
-
-asciicast_event* get_item(slice *s, int i) {
-    return s->array[i];
-}
-
-void free_slice(slice *s) {
-    for (int i = 0; i < s->size; i++) {
-       free_asciicast_event(s->array[i]);
-       s->array[i] = NULL;
-    }
-
-    free(s->array);
-    s->array = NULL;
-    s->cap = s->size = 0;
-
-    free(s);
 }

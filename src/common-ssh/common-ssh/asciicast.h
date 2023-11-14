@@ -1,47 +1,14 @@
 #include <time.h>
 #include <stdlib.h>
+#include <guacamole/client.h>
 #include "guacamole/timestamp.h"
 #include "guacamole/timestamp-types.h"
 
-
-typedef struct asciicast_event {
-
-    /*
-    the timestamp of the event
-    */
-    float timestamp;
-
-    /*
-    the mode of the event
-    */
-   char* mode;
-
-   /*
-   the data of the event
-   */
-   char* data;
-
-} asciicast_event;
-
-asciicast_event *asciicast_event_create(float timestamp, char *mode, char *buffer, int bytes_read);
-char *asciicast_event_to_json(asciicast_event *e);
-void free_asciicast_event(asciicast_event *e);
-
-typedef struct slice {
-   asciicast_event* *array;
-
-   size_t size;
-
-   size_t cap; 
-
-} slice;
-
-size_t slice_len(slice *s);
-slice* append(slice *s, asciicast_event *e);
-asciicast_event* get_item(slice *s, int i);
-void free_slice(slice *s);
+char *asciicast_event_to_json(float timestamp, const char* mode, const char* data);
 
 typedef struct asciicast_recording {
+
+   guac_socket *socket;
 
    guac_timestamp epoch;
 
@@ -51,17 +18,13 @@ typedef struct asciicast_recording {
 
    char input_start;
 
-   slice *input_events;
-
-   slice *output_events;
-
    char *path;
 
    char *name;
 
 } asciicast_recording;
 
-asciicast_recording* asciicast_recording_create(char* path, char* name);
-char *create_asciicast_header(asciicast_recording *rec);
-char save_asciicast_file(asciicast_recording *rec);
+asciicast_recording* asciicast_recording_create(char* path, char* name, int create_path, guac_client *client);
+char* create_asciicast_header(asciicast_recording *rec);
+char save_asciicast_file(asciicast_recording *rec, guac_client *client);
 void free_asciicast_recording(asciicast_recording *rec);
