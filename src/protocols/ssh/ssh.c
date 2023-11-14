@@ -182,28 +182,32 @@ void* ssh_input_thread(void* data) {
 
     /* Write all data read */
     while ((bytes_read = guac_terminal_read_stdin(ssh_client->term, buffer, sizeof(buffer))) > 0) {
-        if (ssh_client->settings->asciicast_recording) {
-            sec = guac_timestamp_seconds(guac_timestamp_current() - ssh_client->ascii_recording->epoch);
-        }
-        
         pthread_mutex_lock(&(ssh_client->term_channel_lock));
-        libssh2_channel_write(ssh_client->term_channel, buffer, bytes_read);
-        pthread_mutex_unlock(&(ssh_client->term_channel_lock));
-
-        if (ssh_client->settings->asciicast_recording) {
+        if (ssh_client->ascii_recording != NULL) {
+            sec = guac_timestamp_seconds(guac_timestamp_current() - ssh_client->ascii_recording->epoch);
             if (!ssh_client->ascii_recording->input_start) {
                 ssh_client->ascii_recording->input_start = true;
-                asciicast_event *e = asciicast_event_create(sec, "i", "start", 5);
-                ssh_client->ascii_recording->input_events = append(ssh_client->ascii_recording->input_events, e);
+
+                if (!write_cast_event(sec, "i", "start", 5, client)) {
+                    free_asciicast_recording(ssh_client->ascii_recording);
+                    ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                    goto cont;
+                }
             }
 
             if (guac_contains(buffer, bytes_read, '\r')) {
                 ssh_client->ascii_recording->input_start = false;
-                asciicast_event *e = asciicast_event_create(sec, "i", "end", 3);
 
-                ssh_client->ascii_recording->input_events = append(ssh_client->ascii_recording->input_events, e);
-            }
+                if (!write_cast_event(sec, "i", "end", 3, client)) {
+                    free_asciicast_recording(ssh_client->ascii_recording);
+                    ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                    goto cont;
+                }
+            }            
         }
+    cont:
+        libssh2_channel_write(ssh_client->term_channel, buffer, bytes_read);
+        pthread_mutex_unlock(&(ssh_client->term_channel_lock));
 
         /* Make sure ssh_input_thread can be terminated anyway */
         if (client->state == GUAC_CLIENT_STOPPING)
@@ -496,18 +500,25 @@ void* ssh_client_thread(void* data) {
         bytes_read = libssh2_channel_read(ssh_client->term_channel,
                 buffer, sizeof(buffer));
 
-        if (ssh_client->settings->asciicast_recording && bytes_read > 0) {
+        /* Capture session's stdout to cast file */
+        if (ssh_client->ascii_recording != NULL && bytes_read > 0) {
             if (ssh_client->ascii_recording->epoch == 0) {
                 ssh_client->ascii_recording->epoch = guac_timestamp_current();
                 ssh_client->ascii_recording->timestamp = ssh_client->ascii_recording->epoch;
             }
 
             float sec = guac_timestamp_seconds(guac_timestamp_current() - ssh_client->ascii_recording->epoch);
-            asciicast_event *e = asciicast_event_create(sec, "o", buffer, bytes_read);
-            ssh_client->ascii_recording->output_events = append(ssh_client->ascii_recording->output_events, e);
+
+            if (!write_cast_event(sec, "o", buffer, bytes_read, client)) {
+                free_asciicast_recording(ssh_client->ascii_recording);
+                ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                goto cont;
+            }
+
             ssh_client->ascii_recording->duration = sec;
         }
 
+    cont:
         pthread_mutex_unlock(&(ssh_client->term_channel_lock));
 
         /* Attempt to write data received. Exit on failure. */
@@ -557,30 +568,8 @@ void* ssh_client_thread(void* data) {
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
 
-//    //TESTING OUTPUTS:
-//     guac_client_log(client, GUAC_LOG_INFO, "outputs");
-//     asciicast_event **arr = ssh_client->ascii_recording->output_events->array;
-//     size_t size = ssh_client->ascii_recording->output_events->size;
-
-//     for (int i = 0; i < size; i++) {
-//         printf("output %d: %.6f %s\n", i, arr[i]->timestamp, arr[i]->data);
-//         fflush(stdout);
-//     }
-//     //
-
-//    //TESTING OUTPUTS:
-//     guac_client_log(client, GUAC_LOG_INFO, "inputs");
-//     asciicast_event **arr2 = ssh_client->ascii_recording->input_events->array;
-//     size_t size2 = ssh_client->ascii_recording->input_events->size;
-
-//     for (int i = 0; i < size2; i++) {
-//         printf("input %d: %.6f %s\n", i, arr2[i]->timestamp, arr2[i]->data);
-//         fflush(stdout);
-//     }
-//     //
-
-    if (ssh_client->settings->asciicast_recording) {
-        if (!save_asciicast_file(ssh_client->ascii_recording)) {
+    if (ssh_client->ascii_recording != NULL) {
+        if (!save_asciicast_file(ssh_client->ascii_recording, client)) {
             guac_client_log(client, GUAC_LOG_ERROR, 
             "failed to create asciicast file for %s", ssh_client->ascii_recording->name);
         }
@@ -591,3 +580,39 @@ void* ssh_client_thread(void* data) {
     return NULL;
 }
 
+char write_cast_event(float sec, const char* mode, const char* buffer, int bytes_read, guac_client* client) {
+    guac_ssh_client* ssh_client = (guac_ssh_client*) client->data;
+
+    char data[bytes_read + 1];
+    memcpy(data, buffer, bytes_read);
+    data[bytes_read] = 0;
+
+    /* Create asciicast event as json */
+    char* event = asciicast_event_to_json(sec, mode, data);
+    if (event == NULL) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+             "Error creating json event for: %s", ssh_client->ascii_recording->name);
+        return 0;
+    }
+
+    /* Make the asciicast event new line delimited */
+    char event_line[strlen(event) + 2]; // +2 for \n and \0
+     if (snprintf(event_line, sizeof(event_line), "%s\n\0", event) != strlen(event) - 1) {
+         guac_client_log(client, GUAC_LOG_ERROR,
+                "Error preparing event line for: %s", ssh_client->ascii_recording->name);
+        free(event);
+        return 0;
+    }
+
+    /* Write the event to the cast file */
+    if (guac_socket_write(ssh_client->ascii_recording->socket, event_line, strlen(event_line)) != 0) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error writing event for: %s", ssh_client->ascii_recording->name);
+        free(event);
+        return 0;
+    }
+
+    free(event);
+
+    return 1;
+}
