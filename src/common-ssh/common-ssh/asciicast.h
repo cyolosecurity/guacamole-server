@@ -14,7 +14,7 @@ typedef struct asciicast_recording {
 
    guac_timestamp timestamp;
 
-   guac_timestamp duration;
+   float duration;
 
    char input_start;
 
