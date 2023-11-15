@@ -11,6 +11,41 @@
 
 //asciicast_event
 
+char write_cast_event(float sec, const char* mode, const char* buffer, int bytes_read, guac_client* client, asciicast_recording* rec) {
+    char data[bytes_read + 1];
+    memcpy(data, buffer, bytes_read);
+    data[bytes_read] = 0;
+
+    /* Create asciicast event as json */
+    char* event = asciicast_event_to_json(sec, mode, data);
+    if (event == NULL) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+             "Error creating json event for: %s", rec->name);
+        return 0;
+    }
+
+    /* Make the asciicast event new line delimited */
+    char event_line[strlen(event) + 2]; // +2 for \n and \0
+     if (snprintf(event_line, sizeof(event_line), "%s\n", event) != strlen(event) - 1) {
+         guac_client_log(client, GUAC_LOG_ERROR,
+                "Error preparing event line for: %s", rec->name);
+        free(event);
+        return 0;
+    }
+
+    /* Write the event to the cast file */
+    if (guac_socket_write(rec->socket, event_line, strlen(event_line)) != 0) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error writing event for: %s", rec->name);
+        free(event);
+        return 0;
+    }
+
+    free(event);
+
+    return 1;
+}
+
 char *asciicast_event_to_json(float timestamp, const char* mode, const char* data) {
     char *json = NULL;
     cJSON *arr = NULL;
@@ -102,7 +137,7 @@ asciicast_recording* asciicast_recording_create(char* path, char* name, int crea
     }
 
     char header_line[strlen(header) + 2]; // +2 for \n and \0
-    if (snprintf(header_line, sizeof(header_line), "%s\n\0", header) != strlen(header) - 1) {
+    if (snprintf(header_line, sizeof(header_line), "%s\n", header) != strlen(header) - 1) {
         guac_client_log(client, GUAC_LOG_ERROR,
                 "Error preparing header line for: %s", name);
         free(header);
@@ -122,43 +157,6 @@ asciicast_recording* asciicast_recording_create(char* path, char* name, int crea
     }
     
     return rec;
-}
-
-char save_asciicast_file(asciicast_recording* rec, guac_client* client) {
-    /* Create metadata file with session information */
-    if (!create_meta_file(rec, client)) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error creating meta file for : %s", rec->name);
-
-        return 0;
-    }
-
-    char* ext_tmp = ".cast.tmp";
-    char tmp_name[strlen(rec->path) + strlen(rec->name) + strlen(ext_tmp) + 1];
-
-    if (snprintf(tmp_name, sizeof(tmp_name), "%s/%s%s", rec->path, rec->name, ext_tmp) != strlen(tmp_name) - 1) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error creating tmp cast file name for: %s", rec->name);
-        
-        return 0;
-    }
-
-    char* ext = ".cast";
-    char file_name[strlen(rec->path) + strlen(rec->name) + strlen(ext) + 1];
-
-    if (snprintf(file_name, sizeof(file_name), "%s/%s%s", rec->path, rec->name, ext) != strlen(file_name) - 1) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error creating cast file name for: %s", rec->name);
-        
-        return 0;
-    }
-
-    /* Rename file from .cast.tmp to .cast */
-    if (rename(tmp_name, file_name) < 0) {
-        return 0;
-    }
-
-    return 1;
 }
 
 char create_meta_file(asciicast_recording* rec, guac_client* client) {
@@ -186,7 +184,7 @@ char create_meta_file(asciicast_recording* rec, guac_client* client) {
     free(header);
 
     /* Create <RECORDING_NAME>.meta file */
-    int fd = open(meta, O_CREAT | O_WRONLY | O_APPEND); 
+    int fd = open(meta, O_CREAT | O_APPEND, 0600); 
     if (fd ==  -1) {
         guac_client_log(client, GUAC_LOG_ERROR,
             "Error opening meta file for %s", rec->name);
@@ -205,6 +203,44 @@ char create_meta_file(asciicast_recording* rec, guac_client* client) {
     close(fd);
     return 1;
 } 
+
+char save_asciicast_file(asciicast_recording* rec, guac_client* client) {
+    /* Create metadata file with session information */
+    if (!create_meta_file(rec, client)) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error creating meta file for : %s", rec->name);
+
+        return 0;
+    }
+
+    char* ext_tmp = ".cast.tmp";
+    char tmp_name[strlen(rec->path) + strlen(rec->name) + strlen(ext_tmp) + 1];
+
+    if (snprintf(tmp_name, sizeof(tmp_name), "%s/%s%s", rec->path, rec->name, ext_tmp) != strlen(tmp_name) - 1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error creating tmp cast file name for: %s", rec->name);
+        return 0;
+    }
+
+    char* ext = ".cast";
+    char file_name[strlen(rec->path) + strlen(rec->name) + strlen(ext) + 1];
+
+    if (snprintf(file_name, sizeof(file_name), "%s/%s%s", rec->path, rec->name, ext) != strlen(file_name) - 1) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error creating cast file name for: %s", rec->name);
+        
+        return 0;
+    }
+
+    /* Rename file from .cast.tmp to .cast */
+    if (rename(tmp_name, file_name) < 0) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error renaming cast file for: %s", rec->name);
+        return 0;
+    }
+    
+    return 1;
+}
 
 void free_asciicast_recording(asciicast_recording *rec) {
     guac_socket_free(rec->socket);

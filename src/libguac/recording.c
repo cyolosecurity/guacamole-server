@@ -36,7 +36,7 @@
 #include <string.h>
 #include <unistd.h>
 
-static int guac_recording_open(const char* path,
+int guac_recording_open(const char* path,
         const char* name, char* basename, int basename_size) {
 
     int i;
