@@ -250,7 +250,7 @@ void* ssh_client_thread(void* data) {
     guac_client* client = (guac_client*) data;
     guac_ssh_client* ssh_client = (guac_ssh_client*) client->data;
     guac_ssh_settings* settings = ssh_client->settings;
-    bool asciicast_recording_toggle = false;
+    bool asciicast_recording_toggle = true;
     settings->asciicast_recording = asciicast_recording_toggle && (settings->recording_path != NULL);
 
     char buffer[8192];
