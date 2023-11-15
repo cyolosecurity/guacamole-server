@@ -546,7 +546,6 @@ void* ssh_client_thread(void* data) {
                 goto cont;
             }
 
-            ssh_client->ascii_recording->duration = sec;
         }
 
     cont:
