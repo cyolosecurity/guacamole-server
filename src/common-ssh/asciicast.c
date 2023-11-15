@@ -164,64 +164,7 @@ asciicast_recording* asciicast_recording_create(char* path, char* name, int crea
     return rec;
 }
 
-char create_meta_file(asciicast_recording* rec, guac_client* client) {
-    /* Create json header with the full information of the session */
-    char* header = create_asciicast_header(rec);
-    if (header == NULL) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error creating header for .meta file for : %s", rec->name);
-            
-        return 0;
-    }
-
-    /* Create <RECORDING_NAME>.meta string */
-    char* ext_meta = ".meta";
-    char meta[strlen(rec->path) + strlen(rec->name) + strlen(ext_meta) + 2];
-
-    if (snprintf(meta, sizeof(meta), "%s/%s%s", rec->path, rec->name, ext_meta) != strlen(meta)) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error creating meta file name for: %s", rec->name);
-        
-        free(header);
-
-        return 0;
-    }
-
-    /* Create <RECORDING_NAME>.meta file */
-    int fd = open(meta, O_CREAT | O_WRONLY | O_APPEND, 0644); 
-    if (fd ==  -1) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-            "Error opening meta file for %s", rec->name);
-        free(header);
-
-        return 0;
-    }
-
-    /* Write header to .meta file */
-    if (write(fd, header, strlen(header)) < 0) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-            "Error writing header in .meta file for: %s", rec->name);
-        free(header);
-        close(fd);
-
-        return 0;
-    }
-
-    free(header);
-    close(fd);
-
-    return 1;
-} 
-
 char save_asciicast_file(asciicast_recording* rec, guac_client* client) {
-    /* Create metadata file with session information */
-    if (!create_meta_file(rec, client)) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error creating meta file for : %s", rec->name);
-
-        return 0;
-    }
-
     char* ext_tmp = ".cast.tmp";
     char tmp_name[strlen(rec->path) + strlen(rec->name) + strlen(ext_tmp) + 2];
 
@@ -282,11 +225,6 @@ char *create_asciicast_header(asciicast_recording *rec) {
         goto end;
     }
 
-    cJSON *duration = cJSON_CreateNumber(rec->duration);
-    if (duration == NULL) {
-        goto end;
-    }
-
     cJSON *timestamp = cJSON_CreateNumber(rec->epoch);
     if (timestamp == NULL) {
         goto end;
@@ -306,7 +244,6 @@ char *create_asciicast_header(asciicast_recording *rec) {
     cJSON_AddItemToObject(header, "version", version);
     cJSON_AddItemToObject(header, "width", width);
     cJSON_AddItemToObject(header, "height", height);
-    cJSON_AddItemToObject(header, "duration", duration);
     cJSON_AddItemToObject(header, "timestamp", timestamp);
     cJSON_AddItemToObject(header, "env", env);
 
