@@ -125,7 +125,7 @@ typedef struct guac_recording {
  *     The file descriptor of the open data file if open succeeded, or -1 on
  *     failure.
  */
-static int guac_recording_open(const char* path,
+int guac_recording_open(const char* path,
         const char* name, char* basename, int basename_size);
 
 /**
