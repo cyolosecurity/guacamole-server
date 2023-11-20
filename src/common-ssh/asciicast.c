@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <sys/time.h>
 
 //asciicast_event
 
@@ -74,7 +75,7 @@ char *asciicast_event_to_json(float timestamp, const char* mode, const char* dat
     cJSON_AddItemToArray(arr, m);
     cJSON_AddItemToArray(arr, d);
 
-    json = cJSON_Print(arr);
+    json = cJSON_PrintUnformatted(arr);
 
     end:
         cJSON_Delete(arr);
@@ -158,7 +159,7 @@ asciicast_recording* asciicast_recording_create(char* path, char* name, int crea
 
     /* Recording creation succeeded */
     guac_client_log(client, GUAC_LOG_INFO,
-            "Recording of session will be saved to %s/%s.cast" ,
+            "Recording of session will be saved to %s/%s" ,
             path, name);
     
     return rec;
@@ -174,17 +175,16 @@ char save_asciicast_file(asciicast_recording* rec, guac_client* client) {
         return 0;
     }
 
-    char* ext = ".cast";
-    char file_name[strlen(rec->path) + strlen(rec->name) + strlen(ext) + 2];
+    char file_name[strlen(rec->path) + strlen(rec->name) + 2];
 
-    if (snprintf(file_name, sizeof(file_name), "%s/%s%s", rec->path, rec->name, ext) != strlen(file_name)) {
+    if (snprintf(file_name, sizeof(file_name), "%s/%s", rec->path, rec->name) != strlen(file_name)) {
         guac_client_log(client, GUAC_LOG_ERROR,
                 "Error creating cast file name for: %s", rec->name);
         
         return 0;
     }
 
-    /* Rename file from .cast.tmp to .cast */
+    /* Rename file from <name>.cast.tmp to <name> */
     if (rename(tmp_name, file_name) < 0) {
         guac_client_log(client, GUAC_LOG_ERROR,
                 "Error renaming cast file for: %s", rec->name);
@@ -247,7 +247,7 @@ char *create_asciicast_header(asciicast_recording *rec) {
     cJSON_AddItemToObject(header, "timestamp", timestamp);
     cJSON_AddItemToObject(header, "env", env);
 
-    json = cJSON_Print(header);
+    json = cJSON_PrintUnformatted(header);
 
     end:
         cJSON_Delete(header);
