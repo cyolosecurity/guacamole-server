@@ -509,8 +509,12 @@ void* ssh_client_thread(void* data) {
         if (ssh_client->ascii_recording != NULL && bytes_read > 0) {
             if (ssh_client->ascii_recording->epoch == 0) {
                 ssh_client->ascii_recording->epoch = guac_timestamp_current();
+                printf("EPOCH: %ld\n", ssh_client->ascii_recording->epoch);
+                fflush(stdout);
                 ssh_client->ascii_recording->timestamp = ssh_client->ascii_recording->epoch;
             }
+            printf("current: %.6f   epoch: %.6f\n", guac_timestamp_seconds(guac_timestamp_current()), guac_timestamp_seconds(ssh_client->ascii_recording->epoch));
+            fflush(stdout);
 
             float sec = guac_timestamp_seconds(guac_timestamp_current() - ssh_client->ascii_recording->epoch);
 
