@@ -61,7 +61,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 
-struct timespec guac_get_time(asciicast_recording *rec) {
+struct timespec guac_get_time() {
     struct timespec current;
     if (clock_gettime(CLOCK_MONOTONIC, &current) == -1) {
         current.tv_sec = UINT64_MAX; // indicate an error
@@ -227,7 +227,7 @@ void* ssh_input_thread(void* data) {
     while ((bytes_read = guac_terminal_read_stdin(ssh_client->term, buffer, sizeof(buffer))) > 0) {
         pthread_mutex_lock(&(ssh_client->term_channel_lock));
         if (ssh_client->ascii_recording != NULL) {
-            struct timespec curr_time = guac_get_time(ssh_client->ascii_recording);
+            struct timespec curr_time = guac_get_time();
             if (curr_time.tv_sec == UINT64_MAX) {
                 guac_client_log(client, GUAC_LOG_ERROR, 
                     "failed to get current time for %s", ssh_client->ascii_recording->name);
@@ -565,7 +565,7 @@ void* ssh_client_thread(void* data) {
         /* Capture session's stdout to cast file */
         if (ssh_client->ascii_recording != NULL && bytes_read > 0) {
             if (ssh_client->ascii_recording->epoch.tv_sec == 0 && ssh_client->ascii_recording->epoch.tv_nsec == 0) {
-                ssh_client->ascii_recording->epoch = guac_get_time(ssh_client->ascii_recording);
+                ssh_client->ascii_recording->epoch = guac_get_time();
                 if (ssh_client->ascii_recording->epoch.tv_sec == UINT64_MAX) {
                     guac_client_log(client, GUAC_LOG_ERROR, 
                         "failed to get current time for %s", ssh_client->ascii_recording->name);
@@ -575,7 +575,7 @@ void* ssh_client_thread(void* data) {
                 }
             }
 
-            struct timespec curr_time = guac_get_time(ssh_client->ascii_recording);
+            struct timespec curr_time = guac_get_time();
             if (curr_time.tv_sec == UINT64_MAX) {
                 guac_client_log(client, GUAC_LOG_ERROR, 
                     "failed to get current time for %s", ssh_client->ascii_recording->name);
