@@ -51,28 +51,27 @@ char *asciicast_event_to_json(float timestamp, const char* mode, const char* dat
     char *json = NULL;
     cJSON *arr = NULL;
 
-    cJSON *ts = cJSON_CreateNumber(timestamp);
-    if (ts == NULL) {
-        goto end;
-    }
-
-    cJSON *m = cJSON_CreateString(mode);
-    if (m == NULL) {
-        goto end;
-    }
-
-    cJSON *d = cJSON_CreateString(data);
-    if (d == NULL) {
-        goto end;
-    }
-
     arr = cJSON_CreateArray();
     if (arr == NULL) {
         goto end;
     }
 
+    cJSON *ts = cJSON_CreateNumber(timestamp);
+    if (ts == NULL) {
+        goto end;
+    }
     cJSON_AddItemToArray(arr, ts);
+
+    cJSON *m = cJSON_CreateString(mode);
+    if (m == NULL) {
+        goto end;
+    }
     cJSON_AddItemToArray(arr, m);
+
+    cJSON *d = cJSON_CreateString(data);
+    if (d == NULL) {
+        goto end;
+    }
     cJSON_AddItemToArray(arr, d);
 
     json = cJSON_PrintUnformatted(arr);
@@ -226,38 +225,38 @@ char *create_asciicast_header(asciicast_recording *rec) {
     if (version == NULL) {
         goto end;
     }
+    cJSON_AddItemToObject(header, "version", version);
 
     cJSON *width = cJSON_CreateNumber(103);
     if (width == NULL) {
         goto end;
     }
+    cJSON_AddItemToObject(header, "width", width);
 
     cJSON *height = cJSON_CreateNumber(25);
     if (height == NULL) {
         goto end;
     }
+    cJSON_AddItemToObject(header, "height", height);
 
     cJSON *timestamp = cJSON_CreateNumber(0);
     if (timestamp == NULL) {
         goto end;
     }
-
-    cJSON *term = cJSON_CreateString("xterm-256color");
-    if (term == NULL) {
-        goto end;
-    }
+    cJSON_AddItemToObject(header, "timestamp", timestamp);
 
     cJSON *env = cJSON_CreateObject();
     if (env == NULL) {
         goto end;
     }
-
-    cJSON_AddItemToObject(env, "TERM", term);
-    cJSON_AddItemToObject(header, "version", version);
-    cJSON_AddItemToObject(header, "width", width);
-    cJSON_AddItemToObject(header, "height", height);
-    cJSON_AddItemToObject(header, "timestamp", timestamp);
     cJSON_AddItemToObject(header, "env", env);
+
+
+    cJSON *term = cJSON_CreateString("xterm-256color");
+    if (term == NULL) {
+        goto end;
+    }
+    cJSON_AddItemToObject(env, "TERM", term);
 
     json = cJSON_PrintUnformatted(header);
 
