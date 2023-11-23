@@ -69,14 +69,3 @@ void guac_timestamp_msleep(int duration) {
     nanosleep(&sleep_period, NULL);
 
 }
-
-float guac_timestamp_seconds(guac_timestamp ts) {
-    return (float) ts / 1000;
-}
-
-struct timespec guac1_get_time() {
-    struct timespec current;
-    clock_gettime(CLOCK_MONOTONIC, &current);
-
-    return current;
-}
