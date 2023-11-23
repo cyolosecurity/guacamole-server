@@ -166,6 +166,12 @@ asciicast_recording* asciicast_recording_create(char* path, char* name, int crea
 }
 
 char save_asciicast_file(asciicast_recording* rec, guac_client* client) {
+    if (guac_socket_flush(rec->socket) != 0) {
+        guac_client_log(client, GUAC_LOG_ERROR,
+                "Error flushing cast file for: %s", rec->name);
+        return 0;
+    }
+
     char* ext_tmp = ".cast.tmp";
     char tmp_name[strlen(rec->path) + strlen(rec->name) + strlen(ext_tmp) + 2];
 
@@ -225,7 +231,7 @@ char *create_asciicast_header(asciicast_recording *rec) {
         goto end;
     }
 
-    cJSON *timestamp = cJSON_CreateNumber(rec->epoch);
+    cJSON *timestamp = cJSON_CreateNumber(0);
     if (timestamp == NULL) {
         goto end;
     }
