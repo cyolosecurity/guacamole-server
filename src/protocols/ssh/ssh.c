@@ -61,6 +61,20 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 
+struct timespec guac_get_time() {
+    struct timespec current;
+    if (clock_gettime(CLOCK_MONOTONIC, &current) == -1) {
+        printf("ERROR\n");
+    }
+
+    printf("sec: %ld", current.tv_sec);
+    printf("nsec: %ld\n", current.tv_nsec);
+
+    fflush(stdout);
+    
+    return current;
+}
+
 /**
  * Produces a new user object containing a username and password or private
  * key, prompting the user as necessary to obtain that information.
@@ -184,7 +198,9 @@ void* ssh_input_thread(void* data) {
     while ((bytes_read = guac_terminal_read_stdin(ssh_client->term, buffer, sizeof(buffer))) > 0) {
         pthread_mutex_lock(&(ssh_client->term_channel_lock));
         if (ssh_client->ascii_recording != NULL) {
-            sec = guac_timestamp_seconds(guac_timestamp_current() - ssh_client->ascii_recording->epoch);
+            struct timespec curr_time = guac_get_time();
+            sec = 1000 * (curr_time.tv_sec - ssh_client->ascii_recording->epoch.tv_sec) + (1 / 1000000) * (curr_time.tv_nsec - ssh_client->ascii_recording->epoch.tv_nsec);
+            sec = sec / 1000;
             if (!ssh_client->ascii_recording->input_start) {
                 ssh_client->ascii_recording->input_start = true;
 
@@ -224,7 +240,7 @@ void* ssh_client_thread(void* data) {
     guac_client* client = (guac_client*) data;
     guac_ssh_client* ssh_client = (guac_ssh_client*) client->data;
     guac_ssh_settings* settings = ssh_client->settings;
-    bool asciicast_recording_toggle = true;
+    bool asciicast_recording_toggle = true; // manual toggleing between asciicast recording and native guac recording
     settings->asciicast_recording = asciicast_recording_toggle && (settings->recording_path != NULL);
 
     char buffer[8192];
@@ -507,17 +523,23 @@ void* ssh_client_thread(void* data) {
 
         /* Capture session's stdout to cast file */
         if (ssh_client->ascii_recording != NULL && bytes_read > 0) {
-            if (ssh_client->ascii_recording->epoch == 0) {
-                ssh_client->ascii_recording->epoch = guac_timestamp_current();
-                printf("EPOCH: %ld\n", ssh_client->ascii_recording->epoch);
-                fflush(stdout);
-                ssh_client->ascii_recording->timestamp = ssh_client->ascii_recording->epoch;
+            if (ssh_client->ascii_recording->epoch.tv_sec == 0) {
+                ssh_client->ascii_recording->epoch = guac_get_time();
+                //printf("EPOCH: %ld\n", ssh_client->ascii_recording->epoch);
+                //fflush(stdout);
+                //ssh_client->ascii_recording->timestamp = ssh_client->ascii_recording->epoch;
             }
-            printf("current: %.6f   epoch: %.6f\n", guac_timestamp_seconds(guac_timestamp_current()), guac_timestamp_seconds(ssh_client->ascii_recording->epoch));
+            //printf("current: %.6f   epoch: %.6f\n", guac_timestamp_seconds(guac_timestamp_current()), guac_timestamp_seconds(ssh_client->ascii_recording->epoch));
+            //fflush(stdout);
+
+            struct timespec curr_time = guac_get_time();
+
+            //float sec = guac_timestamp_seconds(guac_timestamp_current() - ssh_client->ascii_recording->epoch);
+            int64_t secs = 1000 * (curr_time.tv_sec - ssh_client->ascii_recording->epoch.tv_sec);
+            int64_t nsects = (curr_time.tv_nsec - ssh_client->ascii_recording->epoch.tv_nsec) / 1000000;
+            double sec = (double)(secs + nsects) / 1000.0;
+            printf("SECS: %f\n", sec);
             fflush(stdout);
-
-            float sec = guac_timestamp_seconds(guac_timestamp_current() - ssh_client->ascii_recording->epoch);
-
             if (!write_cast_event(sec, "o", buffer, bytes_read, client, ssh_client->ascii_recording)) {
                 free_asciicast_recording(ssh_client->ascii_recording);
                 ssh_client->ascii_recording = NULL; // stop recording in case of an error
