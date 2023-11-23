@@ -10,7 +10,7 @@ typedef struct asciicast_recording {
 
    guac_socket *socket;
 
-   guac_timestamp epoch;
+   struct timespec epoch;
 
    guac_timestamp timestamp;
 
