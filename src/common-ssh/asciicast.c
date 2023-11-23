@@ -127,6 +127,9 @@ asciicast_recording* asciicast_recording_create(char* path, char* name, int crea
     
     rec->socket = guac_socket_open(fd);
 
+    rec->epoch.tv_sec = 0;
+    rec->epoch.tv_nsec = 0;
+
     /* Write header to the file */
     char* header = create_asciicast_header(rec);
     if (header == NULL) {
@@ -201,6 +204,9 @@ char save_asciicast_file(asciicast_recording* rec, guac_client* client) {
 }
 
 void free_asciicast_recording(asciicast_recording *rec) {
+    rec->epoch.tv_sec = 0;
+    rec->epoch.tv_nsec = 0;
+
     guac_socket_free(rec->socket);
     free(rec->name);
     free(rec->path);
