@@ -12,8 +12,6 @@ typedef struct asciicast_recording {
 
    struct timespec epoch;
 
-   guac_timestamp timestamp;
-
    char input_start;
 
    char *path;
