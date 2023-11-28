@@ -255,8 +255,7 @@ void* ssh_client_thread(void* data) {
     guac_client* client = (guac_client*) data;
     guac_ssh_client* ssh_client = (guac_ssh_client*) client->data;
     guac_ssh_settings* settings = ssh_client->settings;
-    bool asciicast_recording_toggle = true; // manual toggleing between asciicast recording and native guac recording
-    settings->asciicast_recording = asciicast_recording_toggle && (settings->recording_path != NULL);
+    settings->asciicast_recording = ASCIICAST_ENABLE && (settings->recording_path != NULL);
 
     char buffer[8192];
 
