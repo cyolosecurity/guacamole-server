@@ -6,6 +6,10 @@
 #include <guacamole/client.h>
 #include "guacamole/timestamp.h"
 #include "guacamole/timestamp-types.h"
+
+// manual toggeling between asciicast recording and guac recording
+#define ASCIICAST_ENABLE true
+
 typedef struct asciicast_recording {
 
    guac_socket *socket;
