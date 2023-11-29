@@ -227,6 +227,17 @@ void* ssh_input_thread(void* data) {
     while ((bytes_read = guac_terminal_read_stdin(ssh_client->term, buffer, sizeof(buffer))) > 0) {
         pthread_mutex_lock(&(ssh_client->term_channel_lock));
         if (ssh_client->ascii_recording != NULL) {
+            if (ssh_client->ascii_recording->epoch.tv_sec == 0 && ssh_client->ascii_recording->epoch.tv_nsec == 0) {
+                ssh_client->ascii_recording->epoch = guac_get_time();
+                if (ssh_client->ascii_recording->epoch.tv_sec == UINT64_MAX) {
+                    guac_client_log(client, GUAC_LOG_ERROR, 
+                        "failed to get current time for %s", ssh_client->ascii_recording->name);
+                    free_asciicast_recording(ssh_client->ascii_recording);
+                    ssh_client->ascii_recording = NULL; // stop recording in case of an error
+                    goto cont;
+                }
+            }
+
             struct timespec curr_time = guac_get_time();
             if (curr_time.tv_sec == UINT64_MAX) {
                 guac_client_log(client, GUAC_LOG_ERROR, 
