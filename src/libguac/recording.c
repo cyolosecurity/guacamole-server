@@ -36,34 +36,7 @@
 #include <string.h>
 #include <unistd.h>
 
-/**
- * Attempts to open a new recording within the given path and having the given
- * name. If such a file already exists, sequential numeric suffixes (.1, .2,
- * .3, etc.) are appended until a filename is found which does not exist (or
- * until the maximum number of numeric suffixes has been tried). If the file
- * absolutely cannot be opened due to an error, -1 is returned and errno is set
- * appropriately.
- *
- * @param path
- *     The full path to the directory in which the data file should be created.
- *
- * @param name
- *     The name of the data file which should be crated within the given path.
- *
- * @param basename
- *     A buffer in which the path, a path separator, the filename, any
- *     necessary suffix, and a NULL terminator will be stored. If insufficient
- *     space is available, -1 will be returned, and errno will be set to
- *     ENAMETOOLONG.
- *
- * @param basename_size
- *     The number of bytes available within the provided basename buffer.
- *
- * @return
- *     The file descriptor of the open data file if open succeeded, or -1 on
- *     failure.
- */
-static int guac_recording_open(const char* path,
+int guac_recording_open(const char* path,
         const char* name, char* basename, int basename_size) {
 
     int i;
