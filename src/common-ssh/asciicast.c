@@ -83,7 +83,7 @@ char *asciicast_event_to_json(float timestamp, const char* mode, const char* dat
 
 // asciicast_recording
 
-asciicast_recording* asciicast_recording_create(char* path, char* name, int create_path, guac_client *client) {
+asciicast_recording* asciicast_recording_create(char* path, char* name, int height, int width, int create_path, guac_client *client) {
     char filename[GUAC_COMMON_RECORDING_MAX_NAME_LENGTH];
 
     /* Create path if it does not exist, fail if impossible */
@@ -117,6 +117,10 @@ asciicast_recording* asciicast_recording_create(char* path, char* name, int crea
     }
 
     asciicast_recording* rec = (asciicast_recording*)malloc(sizeof(asciicast_recording));
+
+    rec->height = height;
+    rec->width = width;
+    rec->input_start = 0;
     
     rec->name = malloc(strlen(name) + 1);
     strcpy(rec->name, name);
@@ -227,13 +231,13 @@ char *create_asciicast_header(asciicast_recording *rec) {
     }
     cJSON_AddItemToObject(header, "version", version);
 
-    cJSON *width = cJSON_CreateNumber(103);
+    cJSON *width = cJSON_CreateNumber(rec->width);
     if (width == NULL) {
         goto end;
     }
     cJSON_AddItemToObject(header, "width", width);
 
-    cJSON *height = cJSON_CreateNumber(25);
+    cJSON *height = cJSON_CreateNumber(rec->height);
     if (height == NULL) {
         goto end;
     }
