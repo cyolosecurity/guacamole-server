@@ -12,6 +12,10 @@
 
 typedef struct asciicast_recording {
 
+   int height;
+
+   int width;
+
    guac_socket *socket;
 
    struct timespec epoch;
@@ -24,7 +28,7 @@ typedef struct asciicast_recording {
 
 } asciicast_recording;
 
-asciicast_recording* asciicast_recording_create(char* path, char* name, int create_path, guac_client *client);
+asciicast_recording* asciicast_recording_create(char* path, char* name, int height, int width, int create_path, guac_client *client);
 char* create_asciicast_header(asciicast_recording *rec);
 char save_asciicast_file(asciicast_recording *rec, guac_client *client);
 void free_asciicast_recording(asciicast_recording *rec);
