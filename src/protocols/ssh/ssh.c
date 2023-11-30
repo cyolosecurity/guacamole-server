@@ -27,6 +27,7 @@
 #include "sftp.h"
 #include "ssh.h"
 #include "terminal/terminal.h"
+#include "terminal/terminal-priv.h"
 #include "ttymode.h"
 
 #ifdef ENABLE_SSH_AGENT
@@ -322,27 +323,6 @@ void* ssh_client_thread(void* data) {
 
     char ssh_ttymodes[GUAC_SSH_TTYMODES_SIZE(1)];
 
-    if (settings->asciicast_recording) {
-        ssh_client->ascii_recording = asciicast_recording_create(settings->recording_path,
-                         settings->recording_name,
-                         settings->create_recording_path, 
-                         client);
-
-        settings->recording_path = NULL; // do not record the guac way
-    }
-
-    /* Set up screen recording, if requested */
-    if (settings->recording_path != NULL) {
-        ssh_client->recording = guac_recording_create(client,
-                settings->recording_path,
-                settings->recording_name,
-                settings->create_recording_path,
-                !settings->recording_exclude_output,
-                !settings->recording_exclude_mouse,
-                0, /* Touch events not supported */
-                settings->recording_include_keys);
-    }
-
     /* Create terminal options with required parameters */
     guac_terminal_options* options = guac_terminal_options_create(
             settings->width, settings->height, settings->resolution);
@@ -366,6 +346,29 @@ void* ssh_client_thread(void* data) {
         guac_client_abort(client, GUAC_PROTOCOL_STATUS_SERVER_ERROR,
                 "Terminal initialization failed");
         return NULL;
+    }
+
+    if (settings->asciicast_recording) {
+        ssh_client->ascii_recording = asciicast_recording_create(settings->recording_path,
+                         settings->recording_name,
+                         ssh_client->term->term_height,
+                         ssh_client->term->term_width,
+                         settings->create_recording_path, 
+                         client);
+
+        settings->recording_path = NULL; // do not record the guac way
+    }
+
+    /* Set up screen recording, if requested */
+    if (settings->recording_path != NULL) {
+        ssh_client->recording = guac_recording_create(client,
+                settings->recording_path,
+                settings->recording_name,
+                settings->create_recording_path,
+                !settings->recording_exclude_output,
+                !settings->recording_exclude_mouse,
+                0, /* Touch events not supported */
+                settings->recording_include_keys);
     }
 
     /* Send current values of exposed arguments to owner only */
