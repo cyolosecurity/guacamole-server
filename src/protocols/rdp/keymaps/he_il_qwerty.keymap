@@ -1,0 +1,3 @@
+parent  "base"
+name    "he-il-qwerty"
+freerdp "KBD_HEBREW"
