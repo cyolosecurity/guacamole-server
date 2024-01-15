@@ -283,7 +283,7 @@ int main(int argc, char* argv[]) {
     /* If requested, simply print version and exit, without initializing the
      * logging system, etc. */
     if (config->print_version) {
-        printf("Guacamole proxy daemon (guacd) - Cyolo build - version 1.5.3-3\n");
+        printf("Guacamole proxy daemon (guacd) - Cyolo build - version 1.5.3-4\n");
         exit(EXIT_SUCCESS);
     }
 
@@ -292,7 +292,7 @@ int main(int argc, char* argv[]) {
     openlog(GUACD_LOG_NAME, LOG_PID, LOG_DAEMON);
 
     /* Log start */
-    guacd_log(GUAC_LOG_INFO, "Guacamole proxy daemon (guacd) - Cyolo build - version 1.5.3-3 started");
+    guacd_log(GUAC_LOG_INFO, "Guacamole proxy daemon (guacd) - Cyolo build - version 1.5.3-4 started");
 
     /* Get addresses for binding */
     if ((retval = getaddrinfo(config->bind_host, config->bind_port,
