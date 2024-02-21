@@ -22,7 +22,7 @@
 #
 
 # The Alpine Linux image that should be used as the basis for the guacd image
-ARG ALPINE_BASE_IMAGE=3.18.3
+ARG ALPINE_BASE_IMAGE=3.18.6
 FROM alpine:${ALPINE_BASE_IMAGE} AS builder
 
 # Install build dependencies
@@ -61,11 +61,11 @@ ARG PREFIX_DIR=/opt/guacamole
 # library (these can be overridden at build time if a specific version is
 # needed)
 #
-ARG WITH_FREERDP='2.10.0'
+ARG WITH_FREERDP='2.11.5'
 ARG WITH_LIBSSH2='libssh2-1.11.0' 
 ARG WITH_LIBTELNET='0.23'
 ARG WITH_LIBVNCCLIENT='LibVNCServer-0.9.14'
-ARG WITH_LIBWEBSOCKETS='v4.3.2'
+ARG WITH_LIBWEBSOCKETS='v4.3.3'
 
 #
 # Default build options for each core protocol support library, as well as
