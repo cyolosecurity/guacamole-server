@@ -55,7 +55,7 @@ int guac_recording_open(const char* path,
 
     /* Attempt to open recording */
     int fd = open(basename,
-            O_CREAT | O_EXCL | O_WRONLY,
+            O_CREAT | O_WRONLY,
             S_IRUSR | S_IWUSR | S_IRGRP);
 
     /* Continuously retry with alternate names on failure */
