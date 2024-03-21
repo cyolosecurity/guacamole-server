@@ -102,7 +102,7 @@ asciicast_recording* asciicast_recording_create(char* path, char* name, int heig
     int fd = guac_recording_open(path, name, filename, sizeof(filename));
     if (fd == -1) {
         guac_client_log(client, GUAC_LOG_ERROR,
-                "Creation of recording failed: %s", strerror(errno));
+                "Failed to open recording file '%s': %s", name, strerror(errno));
         return NULL;
     }
 

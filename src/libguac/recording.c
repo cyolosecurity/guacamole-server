@@ -39,8 +39,6 @@
 int guac_recording_open(const char* path,
         const char* name, char* basename, int basename_size) {
 
-    int i;
-
     /* Concatenate path and name (separated by a single slash) */
     int basename_length = snprintf(basename,
             basename_size - GUAC_COMMON_RECORDING_MAX_SUFFIX_LENGTH,
@@ -58,32 +56,9 @@ int guac_recording_open(const char* path,
             O_CREAT | O_WRONLY,
             S_IRUSR | S_IWUSR | S_IRGRP);
 
-    /* Continuously retry with alternate names on failure */
     if (fd == -1) {
-
-        /* Prepare basename for additional suffix */
-        basename[basename_length] = '.';
-        char* suffix = &(basename[basename_length + 1]);
-
-        /* Continue retrying alternative suffixes if file already exists */
-        for (i = 1; fd == -1 && errno == EEXIST
-                && i <= GUAC_COMMON_RECORDING_MAX_SUFFIX; i++) {
-
-            /* Append new suffix */
-            sprintf(suffix, "%i", i);
-
-            /* Retry with newly-suffixed filename */
-            fd = open(basename,
-                    O_CREAT | O_EXCL | O_WRONLY,
-                    S_IRUSR | S_IWUSR | S_IRGRP);
-
-        }
-
-        /* Abort if we've run out of filenames */
-        if (fd == -1)
-            return -1;
-
-    } /* end if open succeeded */
+        return -1;
+    }
 
 /* Explicit file locks are required only on POSIX platforms */
 #ifndef __MINGW32__
