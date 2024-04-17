@@ -98,21 +98,11 @@ asciicast_recording* asciicast_recording_create(char* path, char* name, int heig
         return NULL;
     }
 
-    /* Create tmp file that indicates a recording in progress */
-    char* ext_tmp = ".cast.tmp";
-    char tmp_name[strlen(name) + strlen(ext_tmp) + 1];
-
-    if (snprintf(tmp_name, sizeof(tmp_name), "%s%s", name, ext_tmp) != strlen(tmp_name)) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error creating tmp cast file name for: %s", name);
-        return NULL;
-    }
-
     /* Attempt to open recording file */
-    int fd = guac_recording_open(path, tmp_name, filename, sizeof(filename));
+    int fd = guac_recording_open(path, name, filename, sizeof(filename));
     if (fd == -1) {
         guac_client_log(client, GUAC_LOG_ERROR,
-                "Creation of recording failed: %s", strerror(errno));
+                "Failed to open recording file '%s': %s", name, strerror(errno));
         return NULL;
     }
 
@@ -175,31 +165,6 @@ char save_asciicast_file(asciicast_recording* rec, guac_client* client) {
     if (guac_socket_flush(rec->socket) != 0) {
         guac_client_log(client, GUAC_LOG_ERROR,
                 "Error flushing cast file for: %s", rec->name);
-        return 0;
-    }
-
-    char* ext_tmp = ".cast.tmp";
-    char tmp_name[strlen(rec->path) + strlen(rec->name) + strlen(ext_tmp) + 2];
-
-    if (snprintf(tmp_name, sizeof(tmp_name), "%s/%s%s", rec->path, rec->name, ext_tmp) != strlen(tmp_name)) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error creating tmp cast file name for: %s", rec->name);
-        return 0;
-    }
-
-    char file_name[strlen(rec->path) + strlen(rec->name) + 2];
-
-    if (snprintf(file_name, sizeof(file_name), "%s/%s", rec->path, rec->name) != strlen(file_name)) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error creating cast file name for: %s", rec->name);
-        
-        return 0;
-    }
-
-    /* Rename file from <name>.cast.tmp to <name> */
-    if (rename(tmp_name, file_name) < 0) {
-        guac_client_log(client, GUAC_LOG_ERROR,
-                "Error renaming cast file for: %s", rec->name);
         return 0;
     }
     
