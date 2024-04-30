@@ -102,7 +102,7 @@ ARG FREERDP_OPTS="\
     -DWITH_SERVER_INTERFACE=OFF \
     -DWITH_SHADOW_MAC=OFF \
     -DWITH_SHADOW_X11=OFF \
-    -DWITH_SSE2=ON \
+    -DWITH_SSE2=OFF \
     -DWITH_WAYLAND=OFF \
     -DWITH_X11=OFF \
     -DWITH_X264=OFF \
@@ -140,12 +140,7 @@ ARG LIBWEBSOCKETS_OPTS="\
     -DLWS_WITH_STATIC=OFF"
 
 # Build guacamole-server and its core protocol library dependencies
-RUN echo "$TARGETPLATFORM"
-RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; \
-    then FREERDP_OPTS="${FREERDP_OPTS_COMMON}    -DWITH_SSE2=ON" && echo "SSE2 active"; \
-    else FREERDP_OPTS="${FREERDP_OPTS_COMMON}    -DWITH_SSE2=OFF" && echo "SSE2 disabled"; \
-    fi && \
-${BUILD_DIR}/src/guacd-docker/bin/build-all.sh
+RUN ${BUILD_DIR}/src/guacd-docker/bin/build-all.sh
 
 # Record the packages of all runtime library dependencies
 RUN ${BUILD_DIR}/src/guacd-docker/bin/list-dependencies.sh \
