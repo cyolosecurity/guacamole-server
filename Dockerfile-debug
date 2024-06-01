@@ -169,8 +169,10 @@ ENV LC_ALL=C.UTF-8
 ENV LD_LIBRARY_PATH=${PREFIX_DIR}/lib
 ENV GUACD_LOG_LEVEL=info
 
-# Copy build artifacts into this stage
+# Copy artifacts into this stage
+COPY --from=builder ${BUILD_DIR} ${BUILD_DIR}
 COPY --from=builder ${PREFIX_DIR} ${PREFIX_DIR}
+
 
 # Bring runtime environment up to date and install runtime dependencies
 RUN apk add --no-cache                \
@@ -188,4 +190,4 @@ RUN apk add --no-cache gdb
 
 EXPOSE 4822
 
-CMD /bin/sh
+CMD gdbserver localhost:23456 /opt/guacamole/sbin/guacd  -f -L trace -b 0.0.0.0
