@@ -23,11 +23,41 @@
 ##
 ## Builds the source of guacamole-server and its various core protocol library
 ## dependencies.
-##
+#
+
+SCRIPT_NAME="${0}"
+BUILD_TYPE="Release"
+EXTRA_CFLAGS=""
+
+while test $# -gt 0; do
+  case "$1" in
+    -h|--help)
+      echo "${SCRIPT_NAME} - Builds the source of guacamole-server and its various core protocol library"
+      echo "${SCRIPT_NAME} [options]"
+      echo " "
+      echo "options:"
+      echo "-h, --help                show brief help and exit"
+      echo "--debug                   build debug version"
+      exit 0
+      ;;
+    --debug)
+      echo "Build type: Debug"
+      BUILD_TYPE="Debug"
+      EXTRA_CFLAGS="-g -O0"
+      shift
+      ;;
+    *)
+      error "Unknown flag: $1"
+      exit 1
+      ;;
+  esac
+done
+
+
 
 # Pre-populate build control variables such that the custom build prefix is
 # used for C headers, locating libraries, etc.
-export CFLAGS="-I${PREFIX_DIR}/include"
+export CFLAGS="-I${PREFIX_DIR}/include ${EXTRA_CFLAGS}"
 export LDFLAGS="-L${PREFIX_DIR}/lib"
 export PKG_CONFIG_PATH="${PREFIX_DIR}/lib/pkgconfig" 
 
