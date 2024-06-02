@@ -931,7 +931,7 @@ guac_rdp_settings* guac_rdp_parse_args(guac_user* user,
 
 
     /* In case the user expects glyph caching to be enabled, either explicitly
-     * or by default, warn that this might be problemati, as  glyph cache
+     * or by default, warn that this might be problematic, as  glyph cache
      * is not considered stable. */
     if (!guac_user_parse_args_boolean(user, GUAC_RDP_CLIENT_ARGS, argv,
             IDX_DISABLE_GLYPH_CACHING, 0)) {
