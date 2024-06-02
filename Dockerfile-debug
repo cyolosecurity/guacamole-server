@@ -48,7 +48,7 @@ RUN apk add --no-cache                \
 ARG BUILD_DIR=/tmp/guacamole-server
 
 RUN mkdir -p ${BUILD_DIR}
-COPY configure.ac Makefile.am ${BUILD_DIR}
+COPY configure.ac Makefile.am ${BUILD_DIR}/
 COPY bin ${BUILD_DIR}/bin
 COPY doc ${BUILD_DIR}/doc
 COPY m4 ${BUILD_DIR}/m4
