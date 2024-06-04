@@ -919,20 +919,30 @@ guac_rdp_settings* guac_rdp_parse_args(guac_user* user,
     /* FreeRDP does not consider the glyph cache implementation to be stable as
      * of 2.0.0, and it MUST NOT be used. Usage of the glyph cache results in
      * unexpected disconnects when using older versions of Windows and recent
-     * versions of FreeRDP. See: https://issues.apache.org/jira/browse/GUACAMOLE-1191 */
-    settings->disable_glyph_caching = 1;
+     * versions of FreeRDP. See: https://issues.apache.org/jira/browse/GUACAMOLE-1191
+     *
+     * HOWEVER, we, at Cyolo, DO allow it, to support connections to older Linux
+     * servers (e.g. CentOS 6)
+     *
+     *
+     * */
+    settings->disable_glyph_caching =
+            guac_user_parse_args_boolean(user, GUAC_RDP_CLIENT_ARGS, argv,
+                                         IDX_DISABLE_GLYPH_CACHING, 1);
+
 
     /* In case the user expects glyph caching to be enabled, either explicitly
-     * or by default, warn that this will not be the case as the glyph cache
+     * or by default, warn that this might be problematic, as  glyph cache
      * is not considered stable. */
     if (!guac_user_parse_args_boolean(user, GUAC_RDP_CLIENT_ARGS, argv,
             IDX_DISABLE_GLYPH_CACHING, 0)) {
-        guac_user_log(user, GUAC_LOG_DEBUG, "Glyph caching is currently "
-                "universally disabled, regardless of the value of the \"%s\" "
-                "parameter, as glyph caching support is not considered stable "
+        guac_user_log(user, GUAC_LOG_DEBUG,
+                "Glyph caching support is not considered stable "
                 "by FreeRDP as of the FreeRDP 2.0.0 release. See: "
-                "https://issues.apache.org/jira/browse/GUACAMOLE-1191",
-                GUAC_RDP_CLIENT_ARGS[IDX_DISABLE_GLYPH_CACHING]);
+                "https://issues.apache.org/jira/browse/GUACAMOLE-1191. "
+                "Your decision to enable it for this session (by setting "
+                "disable-glyph-caching to false), may result in unexpected "
+                "disconnects when using older versions of Windows.");
     }
 
     /* Session color depth */
