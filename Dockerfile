@@ -177,6 +177,9 @@ RUN apk add --no-cache                \
         util-linux-login && \
     xargs apk add --no-cache < ${PREFIX_DIR}/DEPENDENCIES
 
+# Add fonts
+RUN apk add --no-cache font-noto-cjk
+
 # We remove the HEALTHCHECK, as our users are not accustomed to seeing the resulting output when running docker ps
 # Checks the operating status every 5 minutes with a timeout of 5 seconds
 #HEALTHCHECK --interval=5m --timeout=5s CMD nc -z 127.0.0.1 4822 || exit 1
