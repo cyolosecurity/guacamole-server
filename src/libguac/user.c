@@ -192,8 +192,6 @@ void vguac_user_abort(guac_user* user, guac_protocol_status status,
         /* Send error immediately, limit information given */
         guac_protocol_send_error(user->socket, "Aborted. See logs.", status);
         guac_socket_flush(user->socket);
-        guac_protocol_send_error(user->pending_socket, "Aborted. See logs.", status);
-        guac_socket_flush(user->pending_socket);
 
         /* Stop user */
         guac_user_stop(user);
