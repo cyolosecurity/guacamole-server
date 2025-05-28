@@ -302,6 +302,8 @@ typedef struct guac_ssh_settings {
      */
     int wol_wait_time;
 
+    bool audit_mode;
+
 } guac_ssh_settings;
 
 /**
