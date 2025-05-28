@@ -77,6 +77,7 @@ const char* GUAC_SSH_CLIENT_ARGS[] = {
     "wol-broadcast-addr",
     "wol-udp-port",
     "wol-wait-time",
+    "audit-mode",
     NULL
 };
 
