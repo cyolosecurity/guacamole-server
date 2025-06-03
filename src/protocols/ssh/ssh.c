@@ -270,7 +270,6 @@ void* audit_thread_f(void* data) {
     void** input = (void**)data;
     guac_client* client = (guac_client*) (input[0]);
     LIBSSH2_CHANNEL* audit_term_chan = (LIBSSH2_CHANNEL*) (input[1]);
-<<<<<<< HEAD
     char buffer[8192];
     int bytes_read;
     for (;;) {
@@ -286,13 +285,6 @@ void* audit_thread_f(void* data) {
         }
         sleep(1);
     }
-=======
-
-    return NULL;
-}
-
-void* ssh_client_thread(void* data) {
->>>>>>> 8ec0b484 (m)
 
     return NULL;
 }
@@ -530,12 +522,8 @@ void* ssh_client_thread(void* data) {
     /* If requested, execute audit channel command */
     if (settings->audit_mode) {
         /* Open channel for terminal */
-<<<<<<< HEAD
 
         ssh_client->audit_term_chan =
-=======
-        LIBSSH2_CHANNEL* audit_term_chan =
->>>>>>> 8ec0b484 (m)
             libssh2_channel_open_session(ssh_client->session->session);
         if (ssh_client->term_channel == NULL) {
             guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
@@ -544,24 +532,15 @@ void* ssh_client_thread(void* data) {
         }
 
         /* execute cyclient */
-<<<<<<< HEAD
         if (libssh2_channel_exec(ssh_client->audit_term_chan, "cyclient -connect-audit")) {
-=======
-        if (libssh2_channel_exec(audit_term_chan, "cyclient -connect-audit")) {
->>>>>>> 8ec0b484 (m)
             guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
                     "Unable to execute command.");
             return NULL;
         }
         pthread_t audit_thread;
         void* arr[] = {
-<<<<<<< HEAD
             (void*)(client),
             (void*)(ssh_client->audit_term_chan),
-=======
-            (void*)client,
-            (void*)audit_term_chan,
->>>>>>> 8ec0b484 (m)
         };
         if (pthread_create(&(audit_thread), NULL, audit_thread_f, (void*) arr)) {
             guac_client_abort(client, GUAC_PROTOCOL_STATUS_SERVER_ERROR, "Unable to start audit thread");
