@@ -279,6 +279,11 @@ void* audit_thread_f(void* data) {
             buffer, sizeof(buffer));
         if (bytes_read > 0) {
             // Write buffer into client
+            guac_socket_instruction_begin(client->socket);
+                ret_val =
+                       guac_socket_write_string(socket, "5.audit-mode,")
+                    || __guac_socket_write_length_string(socket, buffer)
+                    || guac_socket_write_string(socket, ";");
         }
         sleep(1);
     }
