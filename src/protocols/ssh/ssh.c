@@ -262,8 +262,6 @@ void* ssh_input_thread(void* data) {
 
     /* Stop the client so that ssh_client_thread can be terminated */
     guac_client_stop(client);
-<<<<<<< HEAD
-=======
     return NULL;
 
 }
@@ -287,7 +285,6 @@ void* audit_thread_f(void* data) {
         }
         sleep(1);
     }
->>>>>>> c7b060ce (freeing libssh2_channel)
 
     return NULL;
 }
@@ -522,8 +519,6 @@ void* ssh_client_thread(void* data) {
         return NULL;
     }
 
-<<<<<<< HEAD
-=======
     /* If requested, execute audit channel command */
     if (settings->audit_mode) {
         /* Open channel for terminal */
@@ -553,7 +548,6 @@ void* ssh_client_thread(void* data) {
         } 
     }
 
->>>>>>> c7b060ce (freeing libssh2_channel)
     /* Logged in */
     guac_client_log(client, GUAC_LOG_INFO, "SSH connection successful.");
     guac_terminal_start(ssh_client->term);
