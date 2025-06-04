@@ -273,13 +273,13 @@ void* audit_thread_f(void* data) {
     char buffer[8192];
     int bytes_read;
     for (;;) {
-        bytes_read = libssh2_channel_read(ssh_client->term_channel,
+        bytes_read = libssh2_channel_read(audit_term_chan,
             buffer, sizeof(buffer));
         if (bytes_read > 0) {
             // Write buffer into client
             guac_socket_instruction_begin(client->socket);
                 ret_val =
-                       guac_socket_write_string(socket, "5.audit-mode,")
+                       guac_socket_write_string(socket, "9.audit-msg,")
                     || __guac_socket_write_length_string(socket, buffer)
                     || guac_socket_write_string(socket, ";");
         }
@@ -520,6 +520,7 @@ void* ssh_client_thread(void* data) {
     }
 
     /* If requested, execute audit channel command */
+
     if (settings->audit_mode) {
         /* Open channel for terminal */
 
@@ -546,7 +547,7 @@ void* ssh_client_thread(void* data) {
             guac_client_abort(client, GUAC_PROTOCOL_STATUS_SERVER_ERROR, "Unable to start audit thread");
             return NULL;
         } 
-    }
+    } 
 
     /* Logged in */
     guac_client_log(client, GUAC_LOG_INFO, "SSH connection successful.");
