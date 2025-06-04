@@ -29,7 +29,6 @@
 #include "terminal/terminal.h"
 #include "terminal/terminal-priv.h"
 #include "ttymode.h"
-#include <signal.h>
 
 #ifdef ENABLE_SSH_AGENT
 #include "ssh_agent.h"
@@ -65,7 +64,7 @@
 #include <time.h>
 #include <sys/socket.h>
 #include <sys/time.h>
-#include <stdio.h>
+#include <signal.h>
 
 #include "guacamole/unicode.h"
 
@@ -531,6 +530,11 @@ void* ssh_client_thread(void* data) {
             return NULL;
         }
 
+        if (libssh2_channel_request_pty(audit_term_chan, "xterm")) {
+            guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR, "Unable to allocate PTY for audit channel.");
+            return NULL;
+        }
+
         /* execute cyclient */
         if (libssh2_channel_exec(ssh_client->audit_term_chan, "cyclient -connect-audit")) {
             guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
@@ -684,7 +688,7 @@ void* ssh_client_thread(void* data) {
     guac_client_stop(client);
     pthread_join(input_thread, NULL);
     if (settings->audit_mode) {
-        pthread_kill(audit_thread, SIGKILL)
+        pthread_kill(audit_thread, SIGKILL);
     }
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
