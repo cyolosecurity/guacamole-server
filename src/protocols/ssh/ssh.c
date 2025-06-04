@@ -29,6 +29,7 @@
 #include "terminal/terminal.h"
 #include "terminal/terminal-priv.h"
 #include "ttymode.h"
+#include <signal.h>
 
 #ifdef ENABLE_SSH_AGENT
 #include "ssh_agent.h"
@@ -67,15 +68,6 @@
 #include <stdio.h>
 
 #include "guacamole/unicode.h"
-
-ssize_t __guac_socket_write_length_string(guac_socket* socket, const char* str) {
-
-    return
-           guac_socket_write_int(socket, guac_utf8_strlen(str))
-        || guac_socket_write_string(socket, ".")
-        || guac_socket_write_string(socket, str);
-
-}
 
 
 struct timespec guac_get_time() {
@@ -527,6 +519,7 @@ void* ssh_client_thread(void* data) {
     }
 
     /* If requested, execute audit channel command */
+    pthread_t audit_thread;
     if (settings->audit_mode) {
         /* Open channel for terminal */
 
@@ -544,7 +537,6 @@ void* ssh_client_thread(void* data) {
                     "Unable to execute command.");
             return NULL;
         }
-        pthread_t audit_thread;
         void* arr[] = {
             (void*)(client),
             (void*)(ssh_client->audit_term_chan),
@@ -691,6 +683,9 @@ void* ssh_client_thread(void* data) {
     /* Kill client and Wait for input thread to die */
     guac_client_stop(client);
     pthread_join(input_thread, NULL);
+    if (settings->audit_mode) {
+        pthread_kill(audit_thread, SIGKILL)
+    }
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
 
