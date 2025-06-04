@@ -64,6 +64,19 @@
 #include <time.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <stdio.h>
+
+#include "guacamole/unicode.h"
+
+ssize_t __guac_socket_write_length_string(guac_socket* socket, const char* str) {
+
+    return
+           guac_socket_write_int(socket, guac_utf8_strlen(str))
+        || guac_socket_write_string(socket, ".")
+        || guac_socket_write_string(socket, str);
+
+}
+
 
 struct timespec guac_get_time() {
     struct timespec current;
@@ -276,12 +289,29 @@ void* audit_thread_f(void* data) {
         bytes_read = libssh2_channel_read(audit_term_chan,
             buffer, sizeof(buffer));
         if (bytes_read > 0) {
+		char buf2[200];
+		char buf3[101];
+		if (bytes_read <= 100) {
+			for (int i = 0; i < 100; i++) {
+				buf3[i] = buffer[i];
+			}
+			buf3[100] = '\0';
+			sprintf(buf2, "Bytes read: %d, Read: %s\n", bytes_read, buf3);
+		} else {
+			sprintf(buf2, "Bytes read: %d\n", bytes_read);
+		}
             // Write buffer into client
+	                            guac_client_log(client, GUAC_LOG_WARNING,
+                    buf2);
             guac_socket_instruction_begin(client->socket);
-                ret_val =
-                       guac_socket_write_string(socket, "9.audit-msg,")
-                    || __guac_socket_write_length_string(socket, buffer)
-                    || guac_socket_write_string(socket, ";");
+                int ret_val =
+                       guac_socket_write_string(client->socket, "9.audit-msg,")
+                    || __guac_socket_write_length_string(client->socket, buffer)
+                    || guac_socket_write_string(client->socket, ";");
+		guac_socket_instruction_end(client->socket);
+		if (ret_val == 1) {
+			sleep(1);
+		}
         }
         sleep(1);
     }
@@ -520,7 +550,6 @@ void* ssh_client_thread(void* data) {
     }
 
     /* If requested, execute audit channel command */
-
     if (settings->audit_mode) {
         /* Open channel for terminal */
 
