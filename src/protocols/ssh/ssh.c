@@ -286,32 +286,9 @@ void* audit_thread_f(void* data) {
     char buffer[8192];
     int bytes_read;
     for (;;) {
-        bytes_read = libssh2_channel_read(audit_term_chan,
-            buffer, sizeof(buffer));
+        bytes_read = libssh2_channel_read(audit_term_chan, buffer, sizeof(buffer));
         if (bytes_read > 0) {
-		char buf2[200];
-		char buf3[101];
-		if (bytes_read <= 100) {
-			for (int i = 0; i < 100; i++) {
-				buf3[i] = buffer[i];
-			}
-			buf3[100] = '\0';
-			sprintf(buf2, "Bytes read: %d, Read: %s\n", bytes_read, buf3);
-		} else {
-			sprintf(buf2, "Bytes read: %d\n", bytes_read);
-		}
-            // Write buffer into client
-	                            guac_client_log(client, GUAC_LOG_WARNING,
-                    buf2);
-            guac_socket_instruction_begin(client->socket);
-                int ret_val =
-                       guac_socket_write_string(client->socket, "9.audit-msg,")
-                    || __guac_socket_write_length_string(client->socket, buffer)
-                    || guac_socket_write_string(client->socket, ";");
-		guac_socket_instruction_end(client->socket);
-		if (ret_val == 1) {
-			sleep(1);
-		}
+            guac_protocol_audit_msg(client->socket, buffer);
         }
         sleep(1);
     }
