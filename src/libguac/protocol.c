@@ -227,6 +227,19 @@ int guac_protocol_send_arc(guac_socket* socket, const guac_layer* layer,
 
 }
 
+int guac_protocol_audit_msg(guac_socket* socket, char *msg) {
+
+    int ret_val;
+
+    guac_socket_instruction_begin(socket);
+    ret_val = 
+            guac_socket_write_string(socket, "9.audit-msg,")
+            || __guac_socket_write_length_string(socket, msg)
+            || guac_socket_write_string(socket, ";");
+    guac_socket_instruction_end(socket);
+    return ret_val;
+}
+
 int guac_protocol_send_audio(guac_socket* socket, const guac_stream* stream,
         const char* mimetype) {
 
