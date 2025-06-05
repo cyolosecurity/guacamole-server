@@ -66,8 +66,6 @@
 #include <sys/time.h>
 #include <signal.h>
 
-#include "guacamole/unicode.h"
-
 
 struct timespec guac_get_time() {
     struct timespec current;
