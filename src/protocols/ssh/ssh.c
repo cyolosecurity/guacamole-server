@@ -535,7 +535,6 @@ void* ssh_client_thread(void* data) {
             return NULL;
         }
 
-        /* execute cyclient */
         if (libssh2_channel_exec(ssh_client->audit_term_chan, "cyclient -connect-audit")) {
             guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
                     "Unable to execute command.");
