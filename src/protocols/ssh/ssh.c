@@ -520,7 +520,6 @@ void* ssh_client_thread(void* data) {
     /* If requested, execute audit channel command */
     pthread_t audit_thread;
     if (settings->audit_mode) {
-        /* Open channel for terminal */
 
         ssh_client->audit_term_chan =
             libssh2_channel_open_session(ssh_client->session->session);
