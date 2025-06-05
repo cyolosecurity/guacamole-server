@@ -619,6 +619,13 @@ int guac_protocol_send_arc(guac_socket* socket, const guac_layer* layer,
         int x, int y, int radius, double startAngle, double endAngle,
         int negative);
 
+
+/**
+ * Send an audit msg for the activity log
+ */
+int guac_protocol_audit_msg(guac_socket* socket, char *msg);
+
+
 /**
  * Sends a cfill instruction over the given guac_socket connection.
  *

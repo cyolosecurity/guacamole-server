@@ -76,6 +76,7 @@ const char* GUAC_SSH_CLIENT_ARGS[] = {
     "wol-broadcast-addr",
     "wol-udp-port",
     "wol-wait-time",
+    "audit-mode",
     NULL
 };
 
@@ -332,6 +333,8 @@ enum SSH_ARGS_IDX {
      */
     IDX_WOL_WAIT_TIME,
 
+    IDX_AUDIT_MODE,
+
     SSH_ARGS_COUNT
 };
 
@@ -550,6 +553,9 @@ guac_ssh_settings* guac_ssh_parse_args(guac_user* user,
                 IDX_WOL_WAIT_TIME, GUAC_WOL_DEFAULT_BOOT_WAIT_TIME);
         
     }
+
+    settings->audit_mode =
+        guac_user_parse_args_boolean(user, GUAC_SSH_CLIENT_ARGS, argv, IDX_AUDIT_MODE, false);
 
     /* Parsing was successful */
     return settings;

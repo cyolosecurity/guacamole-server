@@ -34,6 +34,8 @@
 #include "ssh_agent.h"
 #endif
 
+#include <unistd.h>
+
 #include <libssh2.h>
 #include <libssh2_sftp.h>
 #include <guacamole/client.h>
@@ -62,6 +64,8 @@
 #include <time.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <signal.h>
+
 
 struct timespec guac_get_time() {
     struct timespec current;
@@ -260,6 +264,23 @@ void* ssh_input_thread(void* data) {
 
     /* Stop the client so that ssh_client_thread can be terminated */
     guac_client_stop(client);
+    return NULL;
+
+}
+
+void* audit_thread_f(void* data) {
+    void** input = (void**)data;
+    guac_client* client = (guac_client*) (input[0]);
+    LIBSSH2_CHANNEL* audit_term_chan = (LIBSSH2_CHANNEL*) (input[1]);
+    char buffer[8192];
+    int bytes_read;
+    for (;;) {
+        bytes_read = libssh2_channel_read(audit_term_chan, buffer, sizeof(buffer));
+        if (bytes_read > 0) {
+            guac_protocol_audit_msg(client->socket, buffer);
+        }
+        sleep(1);
+    }
 
     return NULL;
 }
@@ -494,6 +515,38 @@ void* ssh_client_thread(void* data) {
         return NULL;
     }
 
+    /* If requested, execute audit channel command */
+    pthread_t audit_thread;
+    if (settings->audit_mode) {
+
+        ssh_client->audit_term_chan =
+            libssh2_channel_open_session(ssh_client->session->session);
+        if (ssh_client->term_channel == NULL) {
+            guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
+                    "Unable to open audit terminal channel.");
+            return NULL;
+        }
+
+        if (libssh2_channel_request_pty(audit_term_chan, "xterm")) {
+            guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR, "Unable to allocate PTY for audit channel.");
+            return NULL;
+        }
+
+        if (libssh2_channel_exec(ssh_client->audit_term_chan, "cyclient -connect-audit")) {
+            guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
+                    "Unable to execute command.");
+            return NULL;
+        }
+        void* arr[] = {
+            (void*)(client),
+            (void*)(ssh_client->audit_term_chan),
+        };
+        if (pthread_create(&(audit_thread), NULL, audit_thread_f, (void*) arr)) {
+            guac_client_abort(client, GUAC_PROTOCOL_STATUS_SERVER_ERROR, "Unable to start audit thread");
+            return NULL;
+        } 
+    } 
+
     /* Logged in */
     guac_client_log(client, GUAC_LOG_INFO, "SSH connection successful.");
     guac_terminal_start(ssh_client->term);
@@ -630,6 +683,9 @@ void* ssh_client_thread(void* data) {
     /* Kill client and Wait for input thread to die */
     guac_client_stop(client);
     pthread_join(input_thread, NULL);
+    if (settings->audit_mode) {
+        pthread_kill(audit_thread, SIGKILL);
+    }
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
 
