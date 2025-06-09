@@ -122,6 +122,9 @@ int guac_ssh_client_free_handler(guac_client* client) {
     if (ssh_client->term_channel != NULL)
         libssh2_channel_free(ssh_client->term_channel);
 
+    if (ssh_client->audit_term_chan != NULL)
+        libssh2_channel_free(ssh_client->audit_term_chan);
+
     /* Clean up the SFTP filesystem object and session */
     if (ssh_client->sftp_filesystem) {
         guac_common_ssh_destroy_sftp_filesystem(ssh_client->sftp_filesystem);
