@@ -334,7 +334,7 @@ enum SSH_ARGS_IDX {
     IDX_WOL_WAIT_TIME,
 
     /**
-     * Do we want to connect to our audit service on the server.
+     * Whether the current session should be audited via an additional audit channel.
      */
     IDX_AUDIT_MODE,
 

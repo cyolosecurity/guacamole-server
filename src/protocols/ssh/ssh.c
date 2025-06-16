@@ -269,18 +269,33 @@ void* ssh_input_thread(void* data) {
 }
 
 void* ssh_audit_thread(void* data) {
-    void** input = (void**)data;
     guac_client* client = (guac_client*) (data);
     guac_ssh_client* ssh_client = (guac_ssh_client*) (client->data);
     LIBSSH2_CHANNEL* audit_term_chan = ssh_client->audit_term_chan;
     char buffer[8192];
     int bytes_read;
-    for (;;) {
+    while (client->state != GUAC_CLIENT_STOPPING) {
         bytes_read = libssh2_channel_read(audit_term_chan, buffer, sizeof(buffer));
         if (bytes_read > 0) {
             guac_protocol_audit_msg(client->socket, buffer);
+        } else if (bytes_read < 0 && bytes_read != LIBSSH2_ERROR_EAGAIN ) {
+                guac_client_abort(client, GUAC_LOG_ERROR, 
+                    "Error reading from ssh audit channel. Error code: %d", bytes_read);
+                break;
+        } else if (bytes_read == 0) {
+            struct pollfd fds[] = {{
+                .fd      = ssh_client->session->fd,
+                .events  = POLLIN,
+                .revents = 0,
+            }};
+
+            /* Wait up to computed timeout */
+            if (poll(fds, 1, GUAC_SSH_DEFAULT_POLL_TIMEOUT) < 0) {
+                guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
+                    "Error polling on ssh session fd.");
+                break;
+            }
         }
-        sleep(1);
     }
 
     return NULL;
@@ -680,9 +695,6 @@ void* ssh_client_thread(void* data) {
     /* Kill client and Wait for input thread to die */
     guac_client_stop(client);
     pthread_join(input_thread, NULL);
-    if (settings->audit_mode) {
-        pthread_kill(audit_thread, SIGKILL);
-    }
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
 
