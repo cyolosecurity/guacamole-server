@@ -268,10 +268,11 @@ void* ssh_input_thread(void* data) {
 
 }
 
-void* audit_thread_f(void* data) {
+void* ssh_audit_thread(void* data) {
     void** input = (void**)data;
-    guac_client* client = (guac_client*) (input[0]);
-    LIBSSH2_CHANNEL* audit_term_chan = (LIBSSH2_CHANNEL*) (input[1]);
+    guac_client* client = (guac_client*) (data);
+    guac_ssh_client* ssh_client = (guac_ssh_client*) (client->data);
+    LIBSSH2_CHANNEL* audit_term_chan = ssh_client->audit_term_chan;
     char buffer[8192];
     int bytes_read;
     for (;;) {
@@ -537,11 +538,7 @@ void* ssh_client_thread(void* data) {
                     "Unable to execute command.");
             return NULL;
         }
-        void* arr[] = {
-            (void*)(client),
-            (void*)(ssh_client->audit_term_chan),
-        };
-        if (pthread_create(&(audit_thread), NULL, audit_thread_f, (void*) arr)) {
+        if (pthread_create(&(audit_thread), NULL, ssh_audit_thread, (void*) client)) {
             guac_client_abort(client, GUAC_PROTOCOL_STATUS_SERVER_ERROR, "Unable to start audit thread");
             return NULL;
         } 
