@@ -86,6 +86,9 @@ typedef struct guac_ssh_client {
      */
     LIBSSH2_CHANNEL* term_channel;
 
+    /**
+     * SSH terinal channel, used to pass audit msgs.
+     */
     LIBSSH2_CHANNEL* audit_term_chan;
 
     /**

@@ -528,7 +528,7 @@ void* ssh_client_thread(void* data) {
             return NULL;
         }
 
-        if (libssh2_channel_request_pty(audit_term_chan, "xterm")) {
+        if (libssh2_channel_request_pty(ssh_client->audit_term_chan, "xterm")) {
             guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR, "Unable to allocate PTY for audit channel.");
             return NULL;
         }
