@@ -282,20 +282,21 @@ void* ssh_audit_thread(void* data) {
                 guac_client_abort(client, GUAC_LOG_ERROR, 
                     "Error reading from ssh audit channel. Error code: %d", bytes_read);
                 break;
-        } else if (bytes_read == 0) {
+        } /* else if (bytes_read == 0) {
             struct pollfd fds[] = {{
                 .fd      = ssh_client->session->fd,
                 .events  = POLLIN,
                 .revents = 0,
             }};
 
-            /* Wait up to computed timeout */
+            /* Wait up to computed timeout 
             if (poll(fds, 1, GUAC_SSH_DEFAULT_POLL_TIMEOUT) < 0) {
                 guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
                     "Error polling on ssh session fd.");
                 break;
             }
-        }
+        } */
+        sleep(1);
     }
 
     return NULL;
@@ -537,7 +538,7 @@ void* ssh_client_thread(void* data) {
 
         ssh_client->audit_term_chan =
             libssh2_channel_open_session(ssh_client->session->session);
-        if (ssh_client->term_channel == NULL) {
+        if (ssh_client->audit_term_chan == NULL) {
             guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
                     "Unable to open audit terminal channel.");
             return NULL;
