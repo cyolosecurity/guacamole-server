@@ -303,6 +303,11 @@ typedef struct guac_ssh_settings {
      */
     bool audit_mode;
 
+    /**
+     * The command that initiates the audit in case audit_mode is enabled.
+     */
+    char* audit_command;
+
 } guac_ssh_settings;
 
 /**
