@@ -80,6 +80,15 @@ ssize_t __guac_socket_write_length_string(guac_socket* socket, const char* str) 
 
 }
 
+ssize_t __guac_socket_write_length_bytes(guac_socket* socket, const char* str, unsigned int len) {
+
+    return
+           guac_socket_write_int(socket, guac_utf8_strlen(str))
+        || guac_socket_write_string(socket, ".")
+        || guac_socket_write_string(socket, str);
+
+}
+
 ssize_t __guac_socket_write_length_int(guac_socket* socket, int64_t i) {
 
     char buffer[128];
@@ -227,14 +236,14 @@ int guac_protocol_send_arc(guac_socket* socket, const guac_layer* layer,
 
 }
 
-int guac_protocol_audit_msg(guac_socket* socket, char *msg) {
+int guac_protocol_audit_msg(guac_socket* socket, char *msg, unsigned int len) {
 
     int ret_val;
 
     guac_socket_instruction_begin(socket);
     ret_val = 
             guac_socket_write_string(socket, "9.audit-msg,")
-            || __guac_socket_write_length_string(socket, msg)
+            || __guac_socket_write_length_bytes(socket, msg, len)
             || guac_socket_write_string(socket, ";");
     guac_socket_instruction_end(socket);
     return ret_val;

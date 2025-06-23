@@ -238,6 +238,16 @@ ssize_t guac_socket_write_string(guac_socket* socket, const char* str) {
 
 }
 
+ssize_t guac_socket_write_bytes(guac_socket* socket, const char* buf, unsigned int len) {
+
+    /* Write contents of string */
+    if (guac_socket_write(socket, buf, len))
+        return 1;
+
+    return 0;
+
+}
+
 ssize_t __guac_socket_write_base64_triplet(guac_socket* socket,
         int a, int b, int c) {
 

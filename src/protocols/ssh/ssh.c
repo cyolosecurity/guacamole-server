@@ -277,7 +277,7 @@ void* ssh_audit_thread(void* data) {
     while (client->state != GUAC_CLIENT_STOPPING) {
         bytes_read = libssh2_channel_read(audit_term_chan, buffer, sizeof(buffer));
         if (bytes_read > 0) {
-            guac_protocol_audit_msg(client->socket, buffer);
+            guac_protocol_audit_msg(client->socket, buffer, bytes_read);
         } else if (bytes_read < 0 && bytes_read != LIBSSH2_ERROR_EAGAIN ) {
                 guac_client_abort(client, GUAC_LOG_ERROR, 
                     "Error reading from ssh audit channel. Error code: %d", bytes_read);
@@ -516,22 +516,6 @@ void* ssh_client_thread(void* data) {
         }
     }
 
-    /* If a command is specified, run that instead of a shell */
-    if (settings->command != NULL) {
-        if (libssh2_channel_exec(ssh_client->term_channel, settings->command)) {
-            guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
-                    "Unable to execute command.");
-            return NULL;
-        }
-    }
-
-    /* Otherwise, request a shell */
-    else if (libssh2_channel_shell(ssh_client->term_channel)) {
-        guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
-                "Unable to associate shell with PTY.");
-        return NULL;
-    }
-
     /* If requested, execute audit channel command */
     pthread_t audit_thread;
     if (settings->audit_mode) {
@@ -559,6 +543,22 @@ void* ssh_client_thread(void* data) {
             return NULL;
         } 
     } 
+
+    /* If a command is specified, run that instead of a shell */
+    if (settings->command != NULL) {
+        if (libssh2_channel_exec(ssh_client->term_channel, settings->command)) {
+            guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
+                    "Unable to execute command.");
+            return NULL;
+        }
+    }
+
+    /* Otherwise, request a shell */
+    else if (libssh2_channel_shell(ssh_client->term_channel)) {
+        guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
+                "Unable to associate shell with PTY.");
+        return NULL;
+    }
 
     /* Logged in */
     guac_client_log(client, GUAC_LOG_INFO, "SSH connection successful.");
@@ -696,6 +696,8 @@ void* ssh_client_thread(void* data) {
     /* Kill client and Wait for input thread to die */
     guac_client_stop(client);
     pthread_join(input_thread, NULL);
+    // if (audit_thread is not NULL) TODO
+    pthread_join(audit_thread, NULL);
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
 

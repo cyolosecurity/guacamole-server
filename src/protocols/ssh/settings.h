@@ -299,7 +299,7 @@ typedef struct guac_ssh_settings {
     int wol_wait_time;
 
     /**
-     * Do we want to connect to our audit service on the server.
+     * Whether the current session should be audited via an additional audit channel.
      */
     bool audit_mode;
 
