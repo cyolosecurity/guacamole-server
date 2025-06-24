@@ -268,35 +268,18 @@ void* ssh_input_thread(void* data) {
 
 }
 
-void* ssh_audit_thread(void* data) {
-    guac_client* client = (guac_client*) (data);
+void audit(guac_client* client) {
     guac_ssh_client* ssh_client = (guac_ssh_client*) (client->data);
     LIBSSH2_CHANNEL* audit_term_chan = ssh_client->audit_term_chan;
     char buffer[8192];
     int bytes_read;
-    while (client->state != GUAC_CLIENT_STOPPING) {
-        bytes_read = libssh2_channel_read(audit_term_chan, buffer, sizeof(buffer));
-        if (bytes_read > 0) {
-            guac_protocol_audit_msg(client->socket, buffer, bytes_read);
-        } else if (bytes_read < 0 && bytes_read != LIBSSH2_ERROR_EAGAIN ) {
-                guac_client_abort(client, GUAC_LOG_ERROR, 
-                    "Error reading from ssh audit channel. Error code: %d", bytes_read);
-                break;
-        } 
-        struct pollfd fds[] = {{
-            .fd      = ssh_client->session->fd,
-            .events  = POLLIN,
-            .revents = 0,
-        }};
-
-        if (poll(fds, 1, GUAC_SSH_DEFAULT_POLL_TIMEOUT) < 0) {
-            guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
-                "Error polling on ssh session fd.");
-            break;
-        }
+    bytes_read = libssh2_channel_read(audit_term_chan, buffer, sizeof(buffer));
+    if (bytes_read > 0) {
+        guac_protocol_audit_msg(client->socket, buffer, bytes_read);
+    } else if (bytes_read < 0 && bytes_read != LIBSSH2_ERROR_EAGAIN ) {
+            guac_client_abort(client, GUAC_LOG_ERROR, 
+                "Error reading from ssh audit channel. Error code: %d", bytes_read);
     }
-
-    return NULL;
 }
 
 void* ssh_client_thread(void* data) {
@@ -514,7 +497,6 @@ void* ssh_client_thread(void* data) {
     }
 
     /* If requested, execute audit channel command */
-    pthread_t audit_thread;
     if (settings->audit_mode) {
 
         ssh_client->audit_term_chan =
@@ -535,10 +517,6 @@ void* ssh_client_thread(void* data) {
                     "Unable to execute command.");
             return NULL;
         }
-        if (pthread_create(&(audit_thread), NULL, ssh_audit_thread, (void*) client)) {
-            guac_client_abort(client, GUAC_PROTOCOL_STATUS_SERVER_ERROR, "Unable to start audit thread");
-            return NULL;
-        } 
     } 
 
     /* If a command is specified, run that instead of a shell */
@@ -573,6 +551,8 @@ void* ssh_client_thread(void* data) {
     /* While data available, write to terminal */
     int bytes_read = 0;
     for (;;) {
+        if (settings->audit_mode)
+            audit(client);
 
         /* Track total amount of data read */
         int total_read = 0;
@@ -693,8 +673,6 @@ void* ssh_client_thread(void* data) {
     /* Kill client and Wait for input thread to die */
     guac_client_stop(client);
     pthread_join(input_thread, NULL);
-    if (settings->audit_mode)
-        pthread_join(audit_thread, NULL);
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
 
