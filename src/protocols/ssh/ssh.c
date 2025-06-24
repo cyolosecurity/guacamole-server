@@ -551,8 +551,6 @@ void* ssh_client_thread(void* data) {
     /* While data available, write to terminal */
     int bytes_read = 0;
     for (;;) {
-        if (settings->audit_mode)
-            audit(client);
 
         /* Track total amount of data read */
         int total_read = 0;
@@ -561,6 +559,9 @@ void* ssh_client_thread(void* data) {
         int timeout;
 
         pthread_mutex_lock(&(ssh_client->term_channel_lock));
+
+        if (settings->audit_mode)
+            audit(client);
 
         /* Stop reading at EOF */
         if (libssh2_channel_eof(ssh_client->term_channel)) {
