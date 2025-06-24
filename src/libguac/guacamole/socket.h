@@ -308,7 +308,7 @@ ssize_t guac_socket_write_int(guac_socket* socket, int64_t i);
 */
 ssize_t guac_socket_write_string(guac_socket* socket, const char* str);
 
-ssize_t guac_socket_write_bytes(guac_socket* socket, const char* buf, unsigned int len);
+ssize_t guac_socket_write_bytes(guac_socket* socket, const char* buf, int64_t len);
 
 /**
  * Writes the given binary data to the given guac_socket object as base64-

@@ -80,12 +80,12 @@ ssize_t __guac_socket_write_length_string(guac_socket* socket, const char* str) 
 
 }
 
-ssize_t __guac_socket_write_length_bytes(guac_socket* socket, const char* str, int64_t len) {
+ssize_t __guac_socket_write_length_bytes(guac_socket* socket, const char* buf, int64_t len) {
 
     return
            guac_socket_write_int(socket, len)
         || guac_socket_write_string(socket, ".")
-        || guac_socket_write_string(socket, str);
+        || guac_socket_write_bytes(socket, buf, len);
 
 }
 
