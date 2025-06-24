@@ -696,8 +696,8 @@ void* ssh_client_thread(void* data) {
     /* Kill client and Wait for input thread to die */
     guac_client_stop(client);
     pthread_join(input_thread, NULL);
-    // if (audit_thread is not NULL) TODO
-    pthread_join(audit_thread, NULL);
+    if (settings->audit_mode)
+        pthread_join(audit_thread, NULL);
 
     pthread_mutex_destroy(&ssh_client->term_channel_lock);
 
