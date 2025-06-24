@@ -289,7 +289,7 @@ void* ssh_audit_thread(void* data) {
                 .revents = 0,
             }};
 
-            /* Wait up to computed timeout 
+            Wait up to computed timeout 
             if (poll(fds, 1, GUAC_SSH_DEFAULT_POLL_TIMEOUT) < 0) {
                 guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
                     "Error polling on ssh session fd.");
