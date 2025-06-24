@@ -264,6 +264,7 @@ void* ssh_input_thread(void* data) {
 
     /* Stop the client so that ssh_client_thread can be terminated */
     guac_client_stop(client);
+
     return NULL;
 
 }
