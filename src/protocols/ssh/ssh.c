@@ -281,6 +281,10 @@ void audit(guac_client* client) {
             guac_client_abort(client, GUAC_LOG_ERROR, 
                 "Error reading from ssh audit channel. Error code: %d", bytes_read);
     }
+    if (libssh2_channel_eof(audit_term_chan) == 1) {
+        guac_client_abort(client, GUAC_LOG_ERROR,
+            "Audit channel stoped before session itself.");
+    }
 }
 
 void* ssh_client_thread(void* data) {
