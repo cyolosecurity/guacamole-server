@@ -269,29 +269,30 @@ void* ssh_input_thread(void* data) {
 
 }
 
-void audit_setup(guac_client* client) {
+bool audit_setup(guac_client* client, char* audit_command) {
     guac_ssh_client* ssh_client = (guac_ssh_client*) (client->data);
     ssh_client->audit_term_chan =
         libssh2_channel_open_session(ssh_client->session->session);
     if (ssh_client->audit_term_chan == NULL) {
         guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
                 "Unable to open audit terminal channel.");
-        return NULL;
+        return false;
     }
 
     if (libssh2_channel_request_pty(ssh_client->audit_term_chan, "xterm")) {
         guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR, "Unable to allocate PTY for audit channel.");
-        return NULL;
+        return false;
     }
 
-    if (libssh2_channel_exec(ssh_client->audit_term_chan, settings->audit_command)) {
+    if (libssh2_channel_exec(ssh_client->audit_term_chan, audit_command)) {
         guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
                 "Unable to execute command.");
-        return NULL;
+        return false;
     }
+    return true;
 }
 
-void audit(guac_client* client, char* const buffer) {
+void audit(guac_client* client, char* buffer) {
     guac_ssh_client* ssh_client = (guac_ssh_client*) (client->data);
     LIBSSH2_CHANNEL* audit_term_chan = ssh_client->audit_term_chan;
     int bytes_read;
@@ -523,8 +524,11 @@ void* ssh_client_thread(void* data) {
     }
 
     /* If requested, execute audit channel command */
-    if (settings->audit_mode)
-        audit_setup(client);
+    if (settings->audit_mode) {
+        if (!audit_setup(client, settings->audit_command)) {
+            return NULL;
+        }
+    }
 
     /* If a command is specified, run that instead of a shell */
     if (settings->command != NULL) {
