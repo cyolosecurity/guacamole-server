@@ -87,6 +87,11 @@ typedef struct guac_ssh_client {
     LIBSSH2_CHANNEL* term_channel;
 
     /**
+     * SSH terminal channel, used to pass audit messages.
+     */
+    LIBSSH2_CHANNEL* audit_term_chan;
+
+    /**
      * Lock dictating access to the SSH terminal channel.
      */
     pthread_mutex_t term_channel_lock;

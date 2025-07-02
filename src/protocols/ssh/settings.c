@@ -75,6 +75,8 @@ const char* GUAC_SSH_CLIENT_ARGS[] = {
     "wol-broadcast-addr",
     "wol-udp-port",
     "wol-wait-time",
+    "audit-mode",
+    "audit-command",
     NULL
 };
 
@@ -331,6 +333,13 @@ enum SSH_ARGS_IDX {
      */
     IDX_WOL_WAIT_TIME,
 
+    /**
+     * Whether the current session should be audited via an additional audit channel.
+     */
+    IDX_AUDIT_MODE,
+
+    IDX_AUDIT_COMMAND,
+
     SSH_ARGS_COUNT
 };
 
@@ -550,6 +559,13 @@ guac_ssh_settings* guac_ssh_parse_args(guac_user* user,
         
     }
 
+    settings->audit_mode =
+        guac_user_parse_args_boolean(user, GUAC_SSH_CLIENT_ARGS, argv, IDX_AUDIT_MODE, false);
+    
+    if (settings->audit_mode) {
+        settings->audit_command = guac_user_parse_args_string(user, GUAC_SSH_CLIENT_ARGS, argv, IDX_AUDIT_COMMAND, NULL);
+    }
+
     /* Parsing was successful */
     return settings;
 
@@ -598,6 +614,9 @@ void guac_ssh_settings_free(guac_ssh_settings* settings) {
     /* Free Wake-on-LAN settings. */
     free(settings->wol_mac_addr);
     free(settings->wol_broadcast_addr);
+
+    if (settings->audit_mode)
+        guac_mem_free(settings->audit_command);
 
     /* Free overall structure */
     free(settings);
