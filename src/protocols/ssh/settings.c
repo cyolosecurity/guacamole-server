@@ -616,7 +616,7 @@ void guac_ssh_settings_free(guac_ssh_settings* settings) {
     free(settings->wol_broadcast_addr);
 
     if (settings->audit_mode)
-        guac_mem_free(settings->audit_command);
+        free(settings->audit_command);
 
     /* Free overall structure */
     free(settings);
