@@ -298,6 +298,16 @@ typedef struct guac_ssh_settings {
      */
     int wol_wait_time;
 
+    /**
+     * Whether the current session should be audited via an additional audit channel.
+     */
+    bool audit_mode;
+
+    /**
+     * The command that initiates the audit in case audit_mode is enabled.
+     */
+    char* audit_command;
+
 } guac_ssh_settings;
 
 /**

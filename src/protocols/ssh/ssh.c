@@ -34,6 +34,8 @@
 #include "ssh_agent.h"
 #endif
 
+#include <unistd.h>
+
 #include <libssh2.h>
 #include <libssh2_sftp.h>
 #include <guacamole/client.h>
@@ -61,6 +63,8 @@
 #include <time.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <signal.h>
+
 
 struct timespec guac_get_time() {
     struct timespec current;
@@ -261,6 +265,47 @@ void* ssh_input_thread(void* data) {
     guac_client_stop(client);
 
     return NULL;
+
+}
+
+bool audit_setup(guac_client* client, char* audit_command) {
+    guac_ssh_client* ssh_client = (guac_ssh_client*) (client->data);
+    ssh_client->audit_term_chan =
+        libssh2_channel_open_session(ssh_client->session->session);
+    if (ssh_client->audit_term_chan == NULL) {
+        guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
+                "Unable to open audit terminal channel.");
+        return false;
+    }
+
+    if (libssh2_channel_request_pty(ssh_client->audit_term_chan, "xterm")) {
+        guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR, "Unable to allocate PTY for audit channel.");
+        return false;
+    }
+
+    if (libssh2_channel_exec(ssh_client->audit_term_chan, audit_command)) {
+        guac_client_abort(client, GUAC_PROTOCOL_STATUS_UPSTREAM_ERROR,
+                "Unable to execute command.");
+        return false;
+    }
+    return true;
+}
+
+void audit(guac_client* client, char* buffer) {
+    guac_ssh_client* ssh_client = (guac_ssh_client*) (client->data);
+    LIBSSH2_CHANNEL* audit_term_chan = ssh_client->audit_term_chan;
+    int bytes_read;
+    bytes_read = libssh2_channel_read(audit_term_chan, buffer, sizeof(buffer));
+    if (bytes_read > 0) {
+        guac_protocol_audit_msg(client->socket, buffer, bytes_read);
+    } else if (bytes_read < 0 && bytes_read != LIBSSH2_ERROR_EAGAIN ) {
+            guac_client_abort(client, GUAC_LOG_ERROR, 
+                "Error reading from ssh audit channel. Error code: %d", bytes_read);
+    }
+    if (libssh2_channel_eof(audit_term_chan) == 1) {
+        guac_client_abort(client, GUAC_LOG_ERROR,
+            "Audit channel stoped before session itself.");
+    }
 }
 
 void* ssh_client_thread(void* data) {
@@ -478,6 +523,13 @@ void* ssh_client_thread(void* data) {
         }
     }
 
+    /* If requested, execute audit channel command */
+    if (settings->audit_mode) {
+        if (!audit_setup(client, settings->audit_command)) {
+            return NULL;
+        }
+    }
+
     /* If a command is specified, run that instead of a shell */
     if (settings->command != NULL) {
         if (libssh2_channel_exec(ssh_client->term_channel, settings->command)) {
@@ -518,6 +570,9 @@ void* ssh_client_thread(void* data) {
         int timeout;
 
         pthread_mutex_lock(&(ssh_client->term_channel_lock));
+
+        if (settings->audit_mode)
+            audit(client, buffer);
 
         /* Stop reading at EOF */
         if (libssh2_channel_eof(ssh_client->term_channel)) {
