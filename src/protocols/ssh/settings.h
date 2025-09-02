@@ -33,6 +33,12 @@
 #define GUAC_SSH_DEFAULT_PORT "22"
 
 /**
+ * The default number of seconds to attempt a connection to the SSH/SFTP
+ * server before giving up.
+ */
+#define GUAC_SSH_DEFAULT_TIMEOUT 10
+
+/**
  * The filename to use for the typescript, if not specified.
  */
 #define GUAC_SSH_DEFAULT_TYPESCRIPT_NAME "typescript" 
@@ -68,6 +74,12 @@ typedef struct guac_ssh_settings {
      * The port of the SSH server to connect to.
      */
     char* port;
+
+    /**
+     * The number of seconds to attempt to connect to the SSH server before
+     * timing out.
+     */
+    int timeout;
 
     /**
      * The name of the user to login as, if any. If no username is specified,
@@ -146,6 +158,11 @@ typedef struct guac_ssh_settings {
     int resolution;
 
     /**
+     * The maximum number of bytes to allow within the clipboard.
+     */
+    int clipboard_buffer_size;
+
+    /**
      * Whether outbound clipboard access should be blocked. If set, it will not
      * be possible to copy data from the terminal to the client using the
      * clipboard.
@@ -209,6 +226,12 @@ typedef struct guac_ssh_settings {
     bool create_typescript_path;
 
     /**
+     * Whether existing files should be appended to when creating a new
+     * typescript. Disabled by default.
+     */
+    bool typescript_write_existing;
+
+    /**
      * The path in which the screen recording should be saved, if enabled. If
      * no screen recording should be saved, this will be NULL.
      */
@@ -250,6 +273,12 @@ typedef struct guac_ssh_settings {
      * as passwords, credit card numbers, etc.
      */
     bool recording_include_keys;
+
+    /**
+     * Whether existing files should be appended to when creating a new recording.
+     * Disabled by default.
+     */
+    bool recording_write_existing;
 
     /**
      * The number of seconds between sending server alive messages.

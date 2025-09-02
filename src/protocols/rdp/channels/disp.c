@@ -28,6 +28,7 @@
 #include <freerdp/event.h>
 #include <guacamole/client.h>
 #include <guacamole/mem.h>
+#include <guacamole/rect.h>
 #include <guacamole/timestamp.h>
 
 #include <stdlib.h>
@@ -149,56 +150,28 @@ void guac_rdp_disp_load_plugin(rdpContext* context) {
 
 }
 
-/**
- * Fits a given dimension within the allowed bounds for Display Update
- * messages, adjusting the other dimension such that aspect ratio is
- * maintained.
- *
- * @param a The dimension to fit within allowed bounds.
- *
- * @param b
- *     The other dimension to adjust if and only if necessary to preserve
- *     aspect ratio.
- */
-static void guac_rdp_disp_fit(int* a, int* b) {
-
-    int a_value = *a;
-    int b_value = *b;
-
-    /* Ensure first dimension is within allowed range */
-    if (a_value < GUAC_RDP_DISP_MIN_SIZE) {
-
-        /* Adjust other dimension to maintain aspect ratio */
-        int adjusted_b = b_value * GUAC_RDP_DISP_MIN_SIZE / a_value;
-        if (adjusted_b > GUAC_RDP_DISP_MAX_SIZE)
-            adjusted_b = GUAC_RDP_DISP_MAX_SIZE;
-
-        *a = GUAC_RDP_DISP_MIN_SIZE;
-        *b = adjusted_b;
-
-    }
-    else if (a_value > GUAC_RDP_DISP_MAX_SIZE) {
-
-        /* Adjust other dimension to maintain aspect ratio */
-        int adjusted_b = b_value * GUAC_RDP_DISP_MAX_SIZE / a_value;
-        if (adjusted_b < GUAC_RDP_DISP_MIN_SIZE)
-            adjusted_b = GUAC_RDP_DISP_MIN_SIZE;
-
-        *a = GUAC_RDP_DISP_MAX_SIZE;
-        *b = adjusted_b;
-
-    }
-
-}
-
 void guac_rdp_disp_set_size(guac_rdp_disp* disp, guac_rdp_settings* settings,
         freerdp* rdp_inst, int width, int height) {
 
-    /* Fit width within bounds, adjusting height to maintain aspect ratio */
-    guac_rdp_disp_fit(&width, &height);
+    guac_rect resize = {
+        .left = 0,
+        .top = 0,
+        .right = width,
+        .bottom = height
+    };
 
-    /* Fit height within bounds, adjusting width to maintain aspect ratio */
-    guac_rdp_disp_fit(&height, &width);
+    /* Fit width and height within bounds, maintaining aspect ratio */
+    guac_rect_shrink(&resize, GUAC_RDP_DISP_MAX_SIZE, GUAC_RDP_DISP_MAX_SIZE);
+
+    width = guac_rect_width(&resize);
+    height = guac_rect_height(&resize);
+
+    /* As it's possible for a rectangle to exceed the maximum allowed
+     * dimensions, yet fall below the minimum allowed dimensions once adjusted,
+     * we don't bother preserving aspect ratio for the unlikely case that a
+     * dimension is below the minimums (consider a rectangle like 16384x256) */
+    if (width  < GUAC_RDP_DISP_MIN_SIZE) width  = GUAC_RDP_DISP_MIN_SIZE;
+    if (height < GUAC_RDP_DISP_MIN_SIZE) height = GUAC_RDP_DISP_MIN_SIZE;
 
     /* Width must be even */
     if (width % 2 == 1)

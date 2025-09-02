@@ -161,6 +161,11 @@ typedef struct guac_kubernetes_settings {
     int resolution;
 
     /**
+     * The maximum number of bytes to allow within the clipboard.
+     */
+    int clipboard_buffer_size;
+
+    /**
      * Whether outbound clipboard access should be blocked. If set, it will not
      * be possible to copy data from the terminal to the client using the
      * clipboard.
@@ -190,6 +195,12 @@ typedef struct guac_kubernetes_settings {
      * not already exist.
      */
     bool create_typescript_path;
+
+    /**
+     * Whether existing files should be appended to when creating a new
+     * typescript. Disabled by default.
+     */
+    bool typescript_write_existing;
 
     /**
      * The path in which the screen recording should be saved, if enabled. If
@@ -233,6 +244,12 @@ typedef struct guac_kubernetes_settings {
      * as passwords, credit card numbers, etc.
      */
     bool recording_include_keys;
+
+    /**
+     * Whether existing files should be appended to when creating a new recording.
+     * Disabled by default.
+     */
+    bool recording_write_existing;
 
     /**
      * The ASCII code, as an integer, that the Kubernetes client will use when

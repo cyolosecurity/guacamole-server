@@ -34,9 +34,19 @@
 #define RDP_CLIENT_HOSTNAME_SIZE 32
 
 /**
+ * The default server response timeout, in seconds.
+ */
+#define RDP_DEFAULT_TIMEOUT 10
+
+/**
  * The default RDP port.
  */
 #define RDP_DEFAULT_PORT 3389
+
+/**
+ * The default SFTP connection timeout, in seconds.
+ */
+#define RDP_DEFAULT_SFTP_TIMEOUT 10
 
 /**
  * The default RDP port used by Hyper-V "VMConnect".
@@ -155,6 +165,11 @@ typedef struct guac_rdp_settings {
      * The port to connect to.
      */
     int port;
+
+    /**
+     * The timeout, in seconds, to wait for the remote host to respond.
+     */
+    int timeout;
 
     /**
      * The domain of the user logging in.
@@ -327,6 +342,11 @@ typedef struct guac_rdp_settings {
     char** svc_names;
 
     /**
+     * The maximum number of bytes to allow within the clipboard.
+     */
+    int clipboard_buffer_size;
+
+    /**
      * Whether outbound clipboard access should be blocked. If set, it will not
      * be possible to copy data from the remote desktop to the client using the
      * clipboard.
@@ -453,6 +473,12 @@ typedef struct guac_rdp_settings {
     char* sftp_port;
 
     /**
+     * The number of seconds to attempt to connect to the SSH server before
+     * timing out.
+     */
+    int sftp_timeout;
+
+    /**
      * The username to provide when authenticating with the SSH server for
      * SFTP.
      */
@@ -475,6 +501,11 @@ typedef struct guac_rdp_settings {
      * key.
      */
     char* sftp_passphrase;
+
+    /**
+     * The public key to use when connecting to the SFTP server, if applicable.
+     */
+    char* sftp_public_key;
 
     /**
      * The default location for file uploads within the SSH server. This will
@@ -560,6 +591,12 @@ typedef struct guac_rdp_settings {
     int recording_include_keys;
 
     /**
+     * Non-zero if existing files should be appended to when creating a new 
+     * recording. Disabled by default.
+     */
+    int recording_write_existing;
+
+    /** 
      * The method to apply when the user's display changes size.
      */
     guac_rdp_resize_method resize_method;

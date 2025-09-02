@@ -37,6 +37,8 @@
 #include <libgen.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <pthread.h>
+#include <netinet/tcp.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -320,6 +322,14 @@ int main(int argc, char* argv[]) {
     /* General */
     int retval;
 
+#ifdef HAVE_DECL_PTHREAD_SETATTR_DEFAULT_NP
+    /* Set default stack size */
+    pthread_attr_t default_pthread_attr;
+    pthread_attr_init(&default_pthread_attr);
+    pthread_attr_setstacksize(&default_pthread_attr, GUACD_THREAD_STACK_SIZE);
+    pthread_setattr_default_np(&default_pthread_attr);
+#endif // HAVE_DECL_PTHREAD_SETATTR_DEFAULT_NP
+
     /* Load configuration */
     guacd_config* config = guacd_conf_load();
     if (config == NULL || guacd_conf_parse_args(config, argc, argv))
@@ -536,6 +546,12 @@ int main(int argc, char* argv[]) {
                 guacd_log(GUAC_LOG_ERROR, "Could not accept client connection: %s", strerror(errno));
             continue;
         }
+
+        /* Set TCP_NODELAY to avoid any latency that would otherwise be added by the OS'
+         * networking stack and Nagle's algorithm */
+        const int SO_TRUE = 1;
+        setsockopt(connected_socket_fd, IPPROTO_TCP, TCP_NODELAY,
+                (const void*) &SO_TRUE, sizeof(SO_TRUE));
 
         /* Create parameters for connection thread */
         guacd_connection_thread_params* params = guac_mem_alloc(sizeof(guacd_connection_thread_params));

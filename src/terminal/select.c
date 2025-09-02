@@ -17,11 +17,11 @@
  * under the License.
  */
 
-
 #include "common/clipboard.h"
 #include "terminal/buffer.h"
 #include "terminal/display.h"
 #include "terminal/select.h"
+#include "terminal/selection-point.h"
 #include "terminal/terminal.h"
 #include "terminal/terminal-priv.h"
 #include "terminal/types.h"
@@ -31,66 +31,6 @@
 #include <guacamole/unicode.h>
 
 #include <stdbool.h>
-
-/**
- * Returns the coordinates for the currently-selected range of text within the
- * given terminal, normalized such that the start coordinate is before the end
- * coordinate and the end coordinate takes into account character width. If no
- * text is currently selected, the behavior of this function is undefined.
- *
- * @param terminal
- *     The guac_terminal instance whose selected text coordinates should be
- *     retrieved in normalized form.
- *
- * @param start_row
- *     A pointer to an int which should receive the row number of the first
- *     character of text selected within the terminal, where the first
- *     (top-most) row in the terminal is row 0. Rows within the scrollback
- *     buffer (above the top-most row of the terminal) will be negative.
- *
- * @param start_col
- *     A pointer to an int which should receive the column number of the first
- *     character of text selected within terminal, where 0 is the first
- *     (left-most) column within the row.
- *
- * @param end_row
- *     A pointer to an int which should receive the row number of the last
- *     character of text selected within the terminal, where the first
- *     (top-most) row in the terminal is row 0. Rows within the scrollback
- *     buffer (above the top-most row of the terminal) will be negative.
- *
- * @param end_col
- *     A pointer to an int which should receive the column number of the first
- *     character of text selected within terminal, taking into account the
- *     width of that character, where 0 is the first (left-most) column within
- *     the row.
- */
-static void guac_terminal_select_normalized_range(guac_terminal* terminal,
-        int* start_row, int* start_col, int* end_row, int* end_col) {
-
-    /* Pass through start/end coordinates if they are already in the expected
-     * order, adjusting only for final character width */
-    if (terminal->selection_start_row < terminal->selection_end_row
-        || (terminal->selection_start_row == terminal->selection_end_row
-            && terminal->selection_start_column < terminal->selection_end_column)) {
-
-        *start_row = terminal->selection_start_row;
-        *start_col = terminal->selection_start_column;
-        *end_row   = terminal->selection_end_row;
-        *end_col   = terminal->selection_end_column + terminal->selection_end_width - 1;
-
-    }
-
-    /* Coordinates must otherwise be swapped in addition to adjusting for
-     * final character width */
-    else {
-        *end_row   = terminal->selection_start_row;
-        *end_col   = terminal->selection_start_column + terminal->selection_start_width - 1;
-        *start_row = terminal->selection_end_row;
-        *start_col = terminal->selection_end_column;
-    }
-
-}
 
 void guac_terminal_select_redraw(guac_terminal* terminal) {
 
@@ -103,12 +43,6 @@ void guac_terminal_select_redraw(guac_terminal* terminal) {
 
         int end_row = terminal->selection_end_row + terminal->scroll_offset;
         int end_column = terminal->selection_end_column;
-
-        /* Update start/end columns to include character width */
-        if (start_row > end_row || (start_row == end_row && start_column > end_column))
-            start_column += terminal->selection_start_width - 1;
-        else
-            end_column += terminal->selection_end_width - 1;
 
         guac_terminal_display_select(terminal->display, start_row, start_column, end_row, end_column);
 
@@ -147,13 +81,14 @@ void guac_terminal_select_redraw(guac_terminal* terminal) {
 static int guac_terminal_find_char(guac_terminal* terminal,
         int row, int* column) {
 
+    guac_terminal_char* characters;
     int start_column = *column;
 
-    guac_terminal_buffer_row* buffer_row = guac_terminal_buffer_get_row(terminal->buffer, row, 0);
-    if (start_column < buffer_row->length) {
+    int length = guac_terminal_buffer_get_columns(terminal->current_buffer, &characters, NULL, row);
+    if (start_column >= 0 && start_column < length) {
 
         /* Find beginning of character */
-        guac_terminal_char* start_char = &(buffer_row->characters[start_column]);
+        guac_terminal_char* start_char = &(characters[start_column]);
         while (start_column > 0 && start_char->value == GUAC_CHAR_CONTINUATION) {
             start_char--;
             start_column--;
@@ -172,18 +107,41 @@ static int guac_terminal_find_char(guac_terminal* terminal,
 
 }
 
-void guac_terminal_select_start(guac_terminal* terminal, int row, int column) {
+/**
+ * Setup a selection point at the given row, column, and side. Making
+ * sure to calculate the start and width of the character pointed to.
+ *
+ * @param terminal
+ *     The guac_terminal in which the character should be located.
+ *
+ * @param row
+ *     The row number of the desired point
+ *
+ * @param column
+ *     The column number of the desired point
+ *
+ * @param side
+ *     The column side of the desired point
+ */
+static void guac_terminal_selection_point_init(guac_terminal_selection_point *point,
+    guac_terminal* terminal, int row, int column, guac_terminal_column_side side) {
 
-    int width = guac_terminal_find_char(terminal, row, &column);
+    point->row                  = row;
+    point->column               = column;
+    point->side                 = side;
+    point->char_width           = guac_terminal_find_char(terminal, row, &column);
+    point->char_starting_column = column;
 
-    terminal->selection_start_row =
-    terminal->selection_end_row   = row;
+}
 
-    terminal->selection_start_column =
-    terminal->selection_end_column   = column;
+void guac_terminal_select_start(guac_terminal* terminal,
+        int row, int column, guac_terminal_column_side side) {
 
-    terminal->selection_start_width =
-    terminal->selection_end_width   = width;
+    /* Selection start and end beging at same point */
+    guac_terminal_selection_point_init(&terminal->selection_start,
+        terminal, row, column, side);
+    guac_terminal_selection_point_init(&terminal->selection_end,
+        terminal, row, column, side);
 
     terminal->text_selected = false;
     terminal->selection_committed = false;
@@ -191,82 +149,104 @@ void guac_terminal_select_start(guac_terminal* terminal, int row, int column) {
 
 }
 
-void guac_terminal_select_update(guac_terminal* terminal, int row, int column) {
+void guac_terminal_select_update(guac_terminal* terminal,
+        int row, int column, guac_terminal_column_side side) {
+    
+    /* Only update if end point has changed */
+    if (row != terminal->selection_end.row
+        || column != terminal->selection_end.column
+        || side != terminal->selection_end.side) {
 
-    /* Only update if selection has changed */
-    if (row != terminal->selection_end_row
-        || column <  terminal->selection_end_column
-        || column >= terminal->selection_end_column + terminal->selection_end_width) {
+        /* Update the end point */
+        guac_terminal_selection_point_init(&terminal->selection_end,
+            terminal, row, column, side);
 
-        int width = guac_terminal_find_char(terminal, row, &column);
+        /* Normalize so that start point comes first when reading left to right */
+        const guac_terminal_selection_point *start = &terminal->selection_start;
+        const guac_terminal_selection_point *end = &terminal->selection_end;
+        if (guac_terminal_selection_point_is_after(start, end)) {
+            end = &terminal->selection_start;
+            start = &terminal->selection_end;
+        }
 
-        terminal->selection_end_row = row;
-        terminal->selection_end_column = column;
-        terminal->selection_end_width = width;
-        terminal->text_selected = true;
+        if (guac_terminal_selection_points_enclose_text(start, end)) {
+            int new_start_column = guac_terminal_selection_point_round_up(start);
+            int new_end_column = guac_terminal_selection_point_round_down(end);
 
-        guac_terminal_notify(terminal);
+            /* Only notify terminal if actual selection has changed */
+            if (terminal->selection_start_row != start->row ||
+                terminal->selection_start_column != new_start_column ||
+                terminal->selection_end_row != end->row ||
+                terminal->selection_end_column != new_end_column) {
+
+                terminal->selection_start_row = start->row;
+                terminal->selection_start_column = new_start_column;
+                terminal->selection_end_row = end->row;
+                terminal->selection_end_column = new_end_column;
+                terminal->text_selected = true;
+                guac_terminal_notify(terminal);
+            }
+        }
+
+        /* If no text is selected, then clear the selection */
+        else {
+
+            terminal->text_selected = false;
+            guac_terminal_notify(terminal);
+
+        }
 
     }
 
 }
 
-void guac_terminal_select_resume(guac_terminal* terminal, int row, int column) {
-
-    int selection_start_row;
-    int selection_start_column;
-    int selection_end_row;
-    int selection_end_column;
+void guac_terminal_select_resume(guac_terminal* terminal,
+        int row, int column, guac_terminal_column_side side) {
 
     /* No need to test coordinates if no text is selected at all */
     if (!terminal->text_selected)
         return;
 
-    /* Use normalized coordinates for sake of simple comparison */
-    guac_terminal_select_normalized_range(terminal,
-            &selection_start_row, &selection_start_column,
-            &selection_end_row, &selection_end_column);
+    guac_terminal_selection_point point;
+    guac_terminal_selection_point_init(&point, terminal, row, column, side);
 
-    /* Prefer to expand from start, such that attempting to resume a selection
-     * within the existing selection preserves the top-most portion of the
-     * selection */
-    if (row > selection_start_row ||
-            (row == selection_start_row && column > selection_start_column)) {
-        terminal->selection_start_row = selection_start_row;
-        terminal->selection_start_column = selection_start_column;
-    }
+    /* Update the start point if it's after this resume point */
+    if (guac_terminal_selection_point_is_after(&terminal->selection_start, &point)) {
+        terminal->selection_start = point;
 
-    /* Expand from bottom-most portion of selection if doing otherwise would
-     * reduce the size of the selection */
-    else {
-        terminal->selection_start_row = selection_end_row;
-        terminal->selection_start_column = selection_end_column;
+        /* Preserve the existing end point */
+        row = terminal->selection_end.row;
+        column = terminal->selection_end.column;
+        side = terminal->selection_end.side;
+
+        /* Clobbering the row here will make sure guac_terminal_select_update actually runs */
+        terminal->selection_end.row = -1;
     }
 
     /* Selection is again in-progress */
     terminal->selection_committed = false;
 
     /* Update selection to contain given character */
-    guac_terminal_select_update(terminal, row, column);
+    guac_terminal_select_update(terminal, row, column, side);
 
 }
 
 /**
- * Appends the text within the given subsection of a terminal row to the
+ * Appends the text within the given array of terminal characters to the
  * clipboard. The provided coordinates are considered inclusively (the
- * characters at the start and end column are included in the copied
- * text). Any out-of-bounds coordinates will be automatically clipped within
- * the bounds of the given row.
+ * characters at the start and end column are included in the copied text). Any
+ * out-of-bounds coordinates will be automatically clipped within the bounds of
+ * the given array.
  *
  * @param terminal
  *     The guac_terminal instance associated with the buffer containing the
  *     text being copied and the clipboard receiving the copied text.
  *
- * @param row
- *     The row number of the text within the terminal to be copied into the
- *     clipboard, where the first (top-most) row in the terminal is row 0. Rows
- *     within the scrollback buffer (above the top-most row of the terminal)
- *     will be negative.
+ * @param characters
+ *     The array of characters copied into the clipboard.
+ *
+ * @param length
+ *     The number of characters in the provided character array.
  *
  * @param start
  *     The first column of the text to be copied from the given row into the
@@ -276,38 +256,44 @@ void guac_terminal_select_resume(guac_terminal* terminal, int row, int column) {
  * @param end
  *     The last column of the text to be copied from the given row into the
  *     clipboard associated with the given terminal, where 0 is the first
- *     (left-most) column within the row, or a negative value to denote that
- *     the last column in the row should be used.
+ *     (left-most) column within the row.
  */
-static void guac_terminal_clipboard_append_row(guac_terminal* terminal,
-        int row, int start, int end) {
+static void guac_terminal_clipboard_append_characters(guac_terminal* terminal,
+        guac_terminal_char* characters, unsigned int length, int start, int end) {
 
     char buffer[1024];
-    int i = start;
-
-    guac_terminal_buffer_row* buffer_row =
-        guac_terminal_buffer_get_row(terminal->buffer, row, 0);
+    int eol;
 
     /* If selection is entirely outside the bounds of the row, then there is
      * nothing to append */
-    if (start < 0 || start > buffer_row->length - 1)
+    if (start < 0 || end < 0 || start >= length)
         return;
 
-    /* Clip given range to actual bounds of row */
-    if (end < 0 || end > buffer_row->length - 1)
-        end = buffer_row->length - 1;
+    /* Ensure desired end column is within bounds */
+    if (end >= length)
+        end = length - 1;
+
+    /* Get position of last not null char */
+    for (eol = end; eol > start; eol--) {
+        if (characters[eol].value != 0)
+            break;
+    }
 
     /* Repeatedly convert chunks of terminal buffer rows until entire specified
      * region has been appended to clipboard */
-    while (i <= end) {
+    for (int i = start; i <= end;) {
 
         int remaining = sizeof(buffer);
         char* current = buffer;
 
         /* Convert as many codepoints within the given range as possible */
-        for (i = start; i <= end; i++) {
+        for (; i <= end; i++) {
 
-            int codepoint = buffer_row->characters[i].value;
+            int codepoint = characters[i].value;
+
+            /* Fill empty with spaces if not at end of line */
+            if (codepoint == 0 && i < eol)
+                codepoint = GUAC_CHAR_SPACE;
 
             /* Ignore null (blank) characters */
             if (codepoint == 0 || codepoint == GUAC_CHAR_CONTINUATION)
@@ -345,36 +331,32 @@ void guac_terminal_select_end(guac_terminal* terminal) {
     /* Reset current clipboard contents */
     guac_common_clipboard_reset(terminal->clipboard, "text/plain");
 
-    int start_row, start_col;
-    int end_row, end_col;
+    int start_row = terminal->selection_start_row;
+    int start_col = terminal->selection_start_column;
+    int end_row = terminal->selection_end_row;
+    int end_col = terminal->selection_end_column;
 
-    /* Ensure proper ordering of start and end coords */
-    guac_terminal_select_normalized_range(terminal,
-            &start_row, &start_col, &end_row, &end_col);
+    guac_terminal_char* characters;
+    bool last_row_was_wrapped = true;
 
-    /* If only one row, simply copy */
-    if (end_row == start_row)
-        guac_terminal_clipboard_append_row(terminal, start_row, start_col, end_col);
+    for (int row = start_row; row <= end_row; row++) {
 
-    /* Otherwise, copy multiple rows */
-    else {
-
-        /* Store first row */
-        guac_terminal_clipboard_append_row(terminal, start_row, start_col, -1);
-
-        /* Store all middle rows */
-        for (int row = start_row + 1; row < end_row; row++) {
+        /* Add a newline only if the previous line was not wrapped */
+        if (!last_row_was_wrapped)
             guac_common_clipboard_append(terminal->clipboard, "\n", 1);
-            guac_terminal_clipboard_append_row(terminal, row, 0, -1);
-        }
 
-        /* Store last row */
-        guac_common_clipboard_append(terminal->clipboard, "\n", 1);
-        guac_terminal_clipboard_append_row(terminal, end_row, 0, end_col);
+        /* Append next row from desired region, adjusting the start/end column
+         * to account for selections that start or end in the middle of a row.
+         * With the exception of the start and end rows, all other rows are
+         * copied in their entirety. */
+        int length = guac_terminal_buffer_get_columns(terminal->current_buffer, &characters, &last_row_was_wrapped, row);
+        guac_terminal_clipboard_append_characters(terminal, characters, length,
+            (row == start_row) ? start_col : 0,
+            (row == end_row)   ? end_col   : length - 1);
 
     }
 
-    /* Send data */
+    /* Broadcast copied data to all connected users only if allowed */
     if (!terminal->disable_copy) {
         guac_common_clipboard_send(terminal->clipboard, client);
         guac_socket_flush(socket);
@@ -387,32 +369,22 @@ void guac_terminal_select_end(guac_terminal* terminal) {
 bool guac_terminal_select_contains(guac_terminal* terminal,
         int start_row, int start_column, int end_row, int end_column) {
 
-    int selection_start_row;
-    int selection_start_column;
-    int selection_end_row;
-    int selection_end_column;
-
     /* No need to test coordinates if no text is selected at all */
     if (!terminal->text_selected)
         return false;
 
-    /* Use normalized coordinates for sake of simple comparison */
-    guac_terminal_select_normalized_range(terminal,
-            &selection_start_row, &selection_start_column,
-            &selection_end_row, &selection_end_column);
-
     /* If test range starts after highlight ends, does not intersect */
-    if (start_row > selection_end_row)
+    if (start_row > terminal->selection_end_row)
         return false;
 
-    if (start_row == selection_end_row && start_column > selection_end_column)
+    if (start_row == terminal->selection_end_row && start_column > terminal->selection_end_column)
         return false;
 
     /* If test range ends before highlight starts, does not intersect */
-    if (end_row < selection_start_row)
+    if (end_row < terminal->selection_start_row)
         return false;
 
-    if (end_row == selection_start_row && end_column < selection_start_column)
+    if (end_row == terminal->selection_start_row && end_column < terminal->selection_start_column)
         return false;
 
     /* Otherwise, does intersect */
