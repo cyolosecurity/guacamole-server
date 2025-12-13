@@ -1,0 +1,57 @@
+# Maintainer: Cyolo <support@cyolo.io>
+pkgname=cyolo-guacd
+pkgver=1.5.5.3
+pkgrel=1
+pkgdesc="Apache Guacamole proxy daemon (Cyolo build with bundled dependencies)"
+url="https://guacamole.apache.org/"
+arch="aarch64 x86_64"
+license="Apache-2.0"
+depends=""
+makedepends=""
+source="guacamole.tar.gz bundled-libs.tar.gz entrypoint.sh"
+options="!check !tracedeps !strip net"
+
+# Installation path follows same pattern as IDAC: /software/guacd-<version>-<hash>
+# Hash will be computed by cyolauncher's installer based on APK contents
+_prefix="/software/guacd-$pkgver"
+
+prepare() {
+    # Artifacts are pre-built and will be extracted by abuild
+    return 0
+}
+
+build() {
+    # Nothing to build - artifacts were built by Docker outside of abuild
+    # All dependencies are pre-bundled
+    return 0
+}
+
+package() {
+    echo "Packaging guacd APK with bundled dependencies..."
+    
+    # Install guacd binary
+    install -Dm755 "$srcdir/guacamole/sbin/guacd" \
+        "$pkgdir$_prefix/sbin/guacd"
+    
+    # Install guacamole libraries (protocol support, etc.)
+    install -dm755 "$pkgdir$_prefix/lib"
+    cp -r "$srcdir/guacamole/lib/"* "$pkgdir$_prefix/lib/"
+    
+    # Install ALL bundled system libraries for portability  
+    if [ -d "$srcdir/bundled-libs" ] && [ "$(ls -A "$srcdir/bundled-libs" 2>/dev/null | wc -l)" -gt 0 ]; then
+        num_libs=$(ls -1 "$srcdir/bundled-libs" | wc -l)
+        echo "   Installing $num_libs bundled system libraries..."
+        # Simple copy - let shell expand the glob
+        cp "$srcdir/bundled-libs"/* "$pkgdir$_prefix/lib/"
+    else
+        echo "   Warning: No bundled libraries found - package may not be portable!"
+    fi
+    
+    # Install entrypoint wrapper (sets LD_LIBRARY_PATH)
+    install -Dm755 "$srcdir/entrypoint.sh" \
+        "$pkgdir$_prefix/bin/entrypoint.sh"
+    
+    echo "Package complete: $pkgdir$_prefix"
+    echo "   Binary: $pkgdir$_prefix/sbin/guacd"
+    echo "   Total libraries: $(find "$pkgdir$_prefix/lib" -name "*.so*" -type f | wc -l) files"
+}
