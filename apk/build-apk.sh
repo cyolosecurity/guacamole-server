@@ -168,32 +168,48 @@ echo ""
 echo "📋 Copying APK to output directory..."
 mkdir -p "$OUTPUT_DIR"
 
+# Detect architecture
+ARCH=$(uname -m)
+if [ "$ARCH" = "arm64" ]; then
+    ARCH="aarch64"
+fi
+
 # Find the most recently modified APK (in case old builds exist)
-APK_PATH=$(docker exec cyolo-apk-builder sh -c "find /home/builder/packages/tmp -name 'cyolo-guacd-*.apk' -type f -exec ls -t {} + 2>/dev/null | head -1")
+APK_PATH=$(docker exec cyolo-apk-builder sh -c "find /home/builder/packages/tmp -name 'guacd-*.apk' -type f -exec ls -t {} + 2>/dev/null | head -1")
 if [ -z "$APK_PATH" ]; then
     echo "❌ APK file not found!"
     echo "Looking in /home/builder/packages:"
-    docker exec cyolo-apk-builder find /home/builder/packages -name 'cyolo-guacd-*.apk' -type f
+    docker exec cyolo-apk-builder find /home/builder/packages -name 'guacd-*.apk' -type f
     exit 1
 fi
 
-APK_NAME=$(basename "$APK_PATH")
+# Copy APK to local temp location
+TEMP_APK="/tmp/guacd-temp-$$.apk"
+docker cp "cyolo-apk-builder:$APK_PATH" "$TEMP_APK"
 
-docker exec cyolo-apk-builder cp "$APK_PATH" /output/
-cp "$APK_BUILDER_DIR/output/$APK_NAME" "$OUTPUT_DIR/" 2>/dev/null || true
+# Compute SHA256 hash (first 16 chars, same as IDAC)
+APK_HASH=$(sha256sum "$TEMP_APK" | cut -c1-16)
 
-echo "   APK: $APK_NAME"
-echo "   Location: $OUTPUT_DIR/$APK_NAME"
+# Final APK name matches IDAC convention: {component}-{version}-{arch}-{hash}.apk
+FINAL_APK_NAME="guacd-${GUACD_VERSION}-${ARCH}-${APK_HASH}.apk"
+
+# Copy to output with final name
+cp "$TEMP_APK" "$OUTPUT_DIR/$FINAL_APK_NAME"
+rm "$TEMP_APK"
+
+echo "   APK: $FINAL_APK_NAME"
+echo "   Location: $OUTPUT_DIR/$FINAL_APK_NAME"
 echo ""
 
 # Display APK info
 echo "📊 APK Information:"
-echo "   Size: $(docker exec cyolo-apk-builder ls -lh "$APK_PATH" | awk '{print $5}')"
+echo "   Size: $(ls -lh "$OUTPUT_DIR/$FINAL_APK_NAME" | awk '{print $5}')"
+echo "   Hash: $APK_HASH"
 echo ""
 echo "   Bundled libraries: $BUNDLED_COUNT shared objects"
 echo ""
 echo "   Contents (first 25 files):"
-docker exec cyolo-apk-builder tar -tzf "$APK_PATH" | head -25
+tar -tzf "$OUTPUT_DIR/$FINAL_APK_NAME" | head -25
 echo "   ... (truncated)"
 echo ""
 
@@ -201,7 +217,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ Build complete!"
 echo ""
 echo "APK package ready:"
-echo "  $OUTPUT_DIR/$APK_NAME"
+echo "  $OUTPUT_DIR/$FINAL_APK_NAME"
 echo ""
 echo "This is a self-contained package with all dependencies bundled."
 echo "It can run on Alpine 3.22+ despite being built on Alpine 3.18.6."
@@ -209,8 +225,9 @@ echo ""
 echo "Next steps:"
 echo "  1. Test extraction:"
 echo "     mkdir -p /tmp/test-guacd"
-echo "     tar -xzf $OUTPUT_DIR/$APK_NAME -C /tmp/test-guacd"
-echo "     ls -la /tmp/test-guacd/software/deps/guacd/$GUACD_VERSION/"
+echo "     tar -xzf $OUTPUT_DIR/$FINAL_APK_NAME -C /tmp/test-guacd"
+echo "     ls -la /tmp/test-guacd/software/guacd/$GUACD_VERSION/"
 echo ""
-echo "  2. Test in cyolauncher (will be handled by cyolauncher's installer)"
+echo "  2. Copy to cyolauncher cache:"
+echo "     cp $OUTPUT_DIR/$FINAL_APK_NAME /tmp/cyolo-dev/launcher/cache/"
 echo ""

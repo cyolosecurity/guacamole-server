@@ -1,7 +1,7 @@
 # Maintainer: Cyolo <support@cyolo.io>
-pkgname=cyolo-guacd
+pkgname=guacd
 pkgver=1.5.5.3
-pkgrel=1
+pkgrel=0
 pkgdesc="Apache Guacamole proxy daemon (Cyolo build with bundled dependencies)"
 url="https://guacamole.apache.org/"
 arch="aarch64 x86_64"
@@ -11,9 +11,9 @@ makedepends=""
 source="guacamole.tar.gz bundled-libs.tar.gz entrypoint.sh"
 options="!check !tracedeps !strip net"
 
-# Installation path follows same pattern as IDAC: /software/guacd-<version>-<hash>
-# Hash will be computed by cyolauncher's installer based on APK contents
-_prefix="/software/guacd-$pkgver"
+# Installation path follows same pattern as IDAC: /software/{component}/{version}/
+# This gets extracted to /software/{component}-{version}-{hash}/ by cyolauncher
+_prefix="/software/guacd/$pkgver"
 
 prepare() {
     # Artifacts are pre-built and will be extracted by abuild
