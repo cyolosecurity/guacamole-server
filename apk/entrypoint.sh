@@ -1,5 +1,4 @@
 #!/bin/sh
-set -e
 
 # entrypoint.sh - Runtime wrapper for guacd
 # This script sets up the environment and starts guacd with proper configuration
@@ -21,13 +20,15 @@ echo "  Listen Port: ${GUAC_LISTEN_PORT}"
 echo "  Log Level: ${GUACD_LOG_LEVEL}"
 echo "  Library Path: ${LD_LIBRARY_PATH}"
 
-# Signal handling - forward signals to child process
+# Function to handle signals and propagate them to child processes
 handle_signal() {
-    echo "Received signal, forwarding to guacd (PID: $child_pid)"
-    kill -TERM "$child_pid" 2>/dev/null
+    echo "Received $1, forwarding to guacd (PID: $child_pid)"
+    kill -s "$1" "$child_pid" 2>/dev/null
 }
 
-trap 'handle_signal' TERM INT
+# Trap signals and forward them to the handle_signal function
+trap 'handle_signal TERM' TERM
+trap 'handle_signal INT' INT
 
 # Start guacd in background
 "${INSTALL_DIR}/sbin/guacd" \
@@ -39,14 +40,15 @@ trap 'handle_signal' TERM INT
 child_pid=$!
 echo "guacd started with PID: $child_pid"
 
-# Wait for guacd to exit
+# Wait for guacd to exit and capture its exit code
 wait "$child_pid"
 exit_code=$?
 
 echo "guacd exited with code: $exit_code"
 
-# Give bugsnag/cleanup time to finish
+# Give cleanup time to finish
 sleep 1
 
+# Exit with guacd's exit code
 exit $exit_code
 
