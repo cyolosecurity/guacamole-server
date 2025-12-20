@@ -41,7 +41,20 @@ echo ""
 # Extract artifacts on HOST machine
 EXTRACT_DIR="/tmp/guacd-extract-$$"
 BUILD_DIR="/tmp/guacd-build-$$"
-trap "rm -rf $EXTRACT_DIR $BUILD_DIR" EXIT
+
+# Cleanup function that handles root-owned files from Docker
+cleanup() {
+    # Use Docker to remove files that may be owned by root
+    if [ -d "$BUILD_DIR" ] || [ -d "$EXTRACT_DIR" ]; then
+        docker run --rm \
+            -v "$BUILD_DIR:/build" \
+            -v "$EXTRACT_DIR:/extract" \
+            alpine:3.18.6 \
+            sh -c "rm -rf /build/* /extract/* 2>/dev/null || true"
+    fi
+    rm -rf "$EXTRACT_DIR" "$BUILD_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 echo "Extracting guacd artifacts..."
 mkdir -p "$EXTRACT_DIR/bundled-libs"
@@ -179,7 +192,10 @@ docker run --rm \
         
         echo 'Copying APK to output...'
         find /home/builder/packages -name '*.apk' -exec cp {} /output/ \;
-        chown -R \$(stat -c %u /build) /output
+        
+        echo 'Fixing output permissions...'
+        # Make output files world-writable so host user can rename/move them
+        chmod -R 777 /output
         
         echo 'Build complete!'
     " || { echo "ERROR: APK build failed"; exit 1; }
