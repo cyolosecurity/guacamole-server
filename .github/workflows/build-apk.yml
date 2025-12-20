@@ -40,15 +40,18 @@ jobs:
     strategy:
       matrix:
         arch: [aarch64, x86_64]
-        include:
-          - arch: aarch64
-            runner: ubuntu-24.04-2core-arm
-          - arch: x86_64
-            runner: ubuntu-latest
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64,amd64
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       
       - name: Update APKBUILD version
         run: |
@@ -62,7 +65,7 @@ jobs:
       - name: Build APK
         run: |
           chmod +x apk/build-apk.sh
-          ./apk/build-apk.sh
+          ./apk/build-apk.sh ${{ matrix.arch }}
       
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

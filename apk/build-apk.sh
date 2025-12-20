@@ -1,6 +1,13 @@
 #!/bin/bash
 # Build guacd as APK package with all dependencies bundled
 # This script is self-contained and works both locally and in CI.
+#
+# Usage: ./build-apk.sh [ARCH]
+#   ARCH: Target architecture (aarch64 or x86_64). Default: native architecture.
+#
+# For cross-compilation, ensure QEMU and Docker buildx are set up:
+#   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+#   docker buildx create --use
 
 set -e
 
@@ -8,8 +15,28 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GUACAMOLE_SERVER_DIR="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="/tmp/cyolo-apk-output"
 
+# Determine target architecture
+TARGET_ARCH="${1:-}"
+if [ -z "$TARGET_ARCH" ]; then
+    # Auto-detect native architecture
+    case "$(uname -m)" in
+        x86_64)  TARGET_ARCH="x86_64" ;;
+        aarch64) TARGET_ARCH="aarch64" ;;
+        arm64)   TARGET_ARCH="aarch64" ;;  # macOS reports arm64
+        *)       echo "ERROR: Unknown architecture $(uname -m)"; exit 1 ;;
+    esac
+fi
+
+# Map to Docker platform
+case "$TARGET_ARCH" in
+    x86_64)  DOCKER_PLATFORM="linux/amd64" ;;
+    aarch64) DOCKER_PLATFORM="linux/arm64" ;;
+    *)       echo "ERROR: Unsupported architecture $TARGET_ARCH"; exit 1 ;;
+esac
+
 echo "Building guacd APK (with bundled dependencies)"
 echo "=================================================="
+echo "   Target Architecture: $TARGET_ARCH ($DOCKER_PLATFORM)"
 echo ""
 
 # Extract version from APKBUILD
@@ -20,16 +47,19 @@ echo "   guacd Version: $GUACD_VERSION-r$GUACD_RELEASE"
 echo ""
 
 # Build guacd using Docker BEFORE starting APK build
-DOCKER_IMAGE="cyolo-guacd-builder:$GUACD_VERSION-$GUACD_RELEASE"
+DOCKER_IMAGE="cyolo-guacd-builder:$GUACD_VERSION-$GUACD_RELEASE-$TARGET_ARCH"
 
 # Check if Docker image already exists
 if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^$DOCKER_IMAGE\$"; then
     echo "Building guacd Docker image (builder stage only)..."
+    echo "   Platform: $DOCKER_PLATFORM"
     echo "   This will compile guacd and all dependencies (~5-10 minutes)"
     cd "$GUACAMOLE_SERVER_DIR"
-    docker build -t "$DOCKER_IMAGE" \
+    docker buildx build -t "$DOCKER_IMAGE" \
+        --platform "$DOCKER_PLATFORM" \
         --target builder \
         --build-arg ALPINE_BASE_IMAGE=3.18.6 \
+        --load \
         -f Dockerfile \
         . || { echo "ERROR: Docker build failed"; exit 1; }
     echo "Docker build complete"
@@ -47,6 +77,7 @@ cleanup() {
     # Use Docker to remove files that may be owned by root
     if [ -d "$BUILD_DIR" ] || [ -d "$EXTRACT_DIR" ]; then
         docker run --rm \
+            --platform "${DOCKER_PLATFORM:-linux/amd64}" \
             -v "$BUILD_DIR:/build" \
             -v "$EXTRACT_DIR:/extract" \
             alpine:3.18.6 \
@@ -73,6 +104,7 @@ echo "   This will bundle all .so files for portability"
 
 # Start a container with the extracted guacamole mounted
 DEPS_CONTAINER=$(docker run -d \
+    --platform "$DOCKER_PLATFORM" \
     -v "$EXTRACT_DIR:/extract" \
     alpine:3.18.6 sleep 3600)
 
@@ -153,17 +185,15 @@ cp "$SCRIPT_DIR/entrypoint.sh" "$BUILD_DIR/"
 echo "Build directory ready"
 echo ""
 
-# Detect architecture
-ARCH=$(uname -m)
-if [ "$ARCH" = "arm64" ]; then
-    ARCH="aarch64"
-fi
+# Use TARGET_ARCH for APK naming
+ARCH="$TARGET_ARCH"
 
 # Build the APK using ephemeral container (self-contained, no external dependencies)
 echo "Building APK package..."
 mkdir -p "$OUTPUT_DIR"
 
 docker run --rm \
+    --platform "$DOCKER_PLATFORM" \
     -v "$BUILD_DIR:/build" \
     -v "$OUTPUT_DIR:/output" \
     -w /build \
