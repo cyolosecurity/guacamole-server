@@ -1,19 +1,19 @@
 #!/bin/bash
 # Build guacd as APK package with all dependencies bundled
+# This script is self-contained and works both locally and in CI.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GUACAMOLE_SERVER_DIR="$(dirname "$SCRIPT_DIR")"
-APK_BUILDER_DIR="$GUACAMOLE_SERVER_DIR/../apk-builder"
 OUTPUT_DIR="/tmp/cyolo-apk-output"
 
-echo "🏗️  Building guacd APK (with bundled dependencies)"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Building guacd APK (with bundled dependencies)"
+echo "=================================================="
 echo ""
 
 # Extract version from APKBUILD
-echo "📋 Reading version from APKBUILD..."
+echo "Reading version from APKBUILD..."
 GUACD_VERSION=$(grep "^pkgver=" "$SCRIPT_DIR/APKBUILD" | cut -d= -f2)
 GUACD_RELEASE=$(grep "^pkgrel=" "$SCRIPT_DIR/APKBUILD" | cut -d= -f2)
 echo "   guacd Version: $GUACD_VERSION-r$GUACD_RELEASE"
@@ -24,25 +24,26 @@ DOCKER_IMAGE="cyolo-guacd-builder:$GUACD_VERSION-$GUACD_RELEASE"
 
 # Check if Docker image already exists
 if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^$DOCKER_IMAGE\$"; then
-    echo "🐳 Building guacd Docker image (builder stage only)..."
+    echo "Building guacd Docker image (builder stage only)..."
     echo "   This will compile guacd and all dependencies (~5-10 minutes)"
     cd "$GUACAMOLE_SERVER_DIR"
     docker build -t "$DOCKER_IMAGE" \
         --target builder \
         --build-arg ALPINE_BASE_IMAGE=3.18.6 \
         -f Dockerfile \
-        . || { echo "❌ Docker build failed"; exit 1; }
-    echo "✅ Docker build complete"
+        . || { echo "ERROR: Docker build failed"; exit 1; }
+    echo "Docker build complete"
 else
-    echo "✅ Docker image already exists: $DOCKER_IMAGE"
+    echo "Docker image already exists: $DOCKER_IMAGE"
 fi
 echo ""
 
 # Extract artifacts on HOST machine
 EXTRACT_DIR="/tmp/guacd-extract-$$"
-trap "rm -rf $EXTRACT_DIR" EXIT
+BUILD_DIR="/tmp/guacd-build-$$"
+trap "rm -rf $EXTRACT_DIR $BUILD_DIR" EXIT
 
-echo "📦 Extracting guacd artifacts..."
+echo "Extracting guacd artifacts..."
 mkdir -p "$EXTRACT_DIR/bundled-libs"
 
 # Extract /opt/guacamole from the image
@@ -50,11 +51,11 @@ CONTAINER_ID=$(docker create "$DOCKER_IMAGE")
 docker cp "$CONTAINER_ID:/opt/guacamole" "$EXTRACT_DIR/"
 docker rm "$CONTAINER_ID" > /dev/null
 
-echo "✅ Artifacts extracted"
+echo "Artifacts extracted"
 echo ""
 
 # Collect ALL shared library dependencies
-echo "📚 Collecting shared library dependencies..."
+echo "Collecting shared library dependencies..."
 echo "   This will bundle all .so files for portability"
 
 # Start a container with the extracted guacamole mounted
@@ -89,7 +90,7 @@ NUM_DEPS=$(wc -l < "$EXTRACT_DIR/deps-list.txt")
 echo "   Found $NUM_DEPS unique shared libraries to bundle"
 
 if [ "$NUM_DEPS" -eq 0 ]; then
-    echo "   ⚠️  Warning: No dependencies found - this might cause runtime errors!"
+    echo "   WARNING: No dependencies found - this might cause runtime errors!"
 else
     # Copy all dependencies - dereference symlinks!
     echo "   Copying shared libraries (dereferencing symlinks)..."
@@ -109,7 +110,7 @@ else
     echo "   Successfully copied $dep_count out of $NUM_DEPS libraries"
 fi
 
-# Cleanup container
+# Cleanup deps container
 docker stop "$DEPS_CONTAINER" > /dev/null
 docker rm "$DEPS_CONTAINER" > /dev/null
 
@@ -121,52 +122,23 @@ if [ "$BUNDLED_COUNT" -gt 0 ]; then
     ls -1 "$EXTRACT_DIR/bundled-libs" | head -10
 fi
 
-echo "✅ Dependencies collected"
+echo "Dependencies collected"
 echo ""
 
-# Start APK builder container if not running
-if ! docker ps --filter name=cyolo-apk-builder --format '{{.Names}}' | grep -q cyolo-apk-builder; then
-    echo "🐳 Starting APK builder container..."
-    cd "$APK_BUILDER_DIR"
-    docker compose up -d
-    sleep 2
-fi
-
-echo "✅ APK builder ready"
-echo ""
+# Prepare build directory with all sources
+echo "Preparing APK build directory..."
+mkdir -p "$BUILD_DIR"
 
 # Create tarballs for APK sources
-echo "📁 Preparing APK sources..."
-tar -czf /tmp/guacamole.tar.gz -C "$EXTRACT_DIR" guacamole
-tar -czf /tmp/bundled-libs.tar.gz -C "$EXTRACT_DIR" bundled-libs
+tar -czf "$BUILD_DIR/guacamole.tar.gz" -C "$EXTRACT_DIR" guacamole
+tar -czf "$BUILD_DIR/bundled-libs.tar.gz" -C "$EXTRACT_DIR" bundled-libs
 
-docker exec -u root cyolo-apk-builder rm -rf /tmp/guacd-build
-docker exec -u root cyolo-apk-builder mkdir -p /tmp/guacd-build
+# Copy APKBUILD and entrypoint
+cp "$SCRIPT_DIR/APKBUILD" "$BUILD_DIR/"
+cp "$SCRIPT_DIR/entrypoint.sh" "$BUILD_DIR/"
 
-docker cp /tmp/guacamole.tar.gz cyolo-apk-builder:/tmp/guacd-build/
-docker cp /tmp/bundled-libs.tar.gz cyolo-apk-builder:/tmp/guacd-build/
-docker cp "$SCRIPT_DIR/APKBUILD" cyolo-apk-builder:/tmp/guacd-build/
-docker cp "$SCRIPT_DIR/entrypoint.sh" cyolo-apk-builder:/tmp/guacd-build/
-
-rm /tmp/guacamole.tar.gz /tmp/bundled-libs.tar.gz
-
-docker exec -u root cyolo-apk-builder chown -R builder:builder /tmp/guacd-build
+echo "Build directory ready"
 echo ""
-
-# Build the APK
-echo "🔨 Building APK package..."
-docker exec -u builder cyolo-apk-builder sh -c "
-  cd /tmp/guacd-build && \
-  abuild checksum && \
-  abuild -r -F
-" || { echo "❌ APK build failed"; exit 1; }
-
-echo "✅ APK built successfully"
-echo ""
-
-# Locate and copy APK to output
-echo "📋 Copying APK to output directory..."
-mkdir -p "$OUTPUT_DIR"
 
 # Detect architecture
 ARCH=$(uname -m)
@@ -174,38 +146,75 @@ if [ "$ARCH" = "arm64" ]; then
     ARCH="aarch64"
 fi
 
-# Find the most recently modified APK (in case old builds exist)
-APK_PATH=$(docker exec cyolo-apk-builder sh -c "find /home/builder/packages/tmp -name 'guacd-*.apk' -type f -exec ls -t {} + 2>/dev/null | head -1")
-if [ -z "$APK_PATH" ]; then
-    echo "❌ APK file not found!"
-    echo "Looking in /home/builder/packages:"
-    docker exec cyolo-apk-builder find /home/builder/packages -name 'guacd-*.apk' -type f
+# Build the APK using ephemeral container (self-contained, no external dependencies)
+echo "Building APK package..."
+mkdir -p "$OUTPUT_DIR"
+
+docker run --rm \
+    -v "$BUILD_DIR:/build" \
+    -v "$OUTPUT_DIR:/output" \
+    -w /build \
+    alpine:3.18.6 \
+    sh -c "
+        set -e
+        
+        echo 'Installing build tools...'
+        apk add --no-cache alpine-sdk abuild > /dev/null
+        
+        echo 'Creating builder user...'
+        adduser -D builder
+        addgroup builder abuild
+        mkdir -p /home/builder/.abuild
+        chown -R builder:builder /home/builder
+        
+        echo 'Setting up signing keys...'
+        su builder -c 'abuild-keygen -a -n'
+        cp /home/builder/.abuild/*.rsa.pub /etc/apk/keys/
+        
+        echo 'Setting permissions...'
+        chown -R builder:builder /build /output
+        
+        echo 'Generating checksums and building APK...'
+        su builder -c 'cd /build && abuild checksum && abuild -r -F'
+        
+        echo 'Copying APK to output...'
+        find /home/builder/packages -name '*.apk' -exec cp {} /output/ \;
+        chown -R \$(stat -c %u /build) /output
+        
+        echo 'Build complete!'
+    " || { echo "ERROR: APK build failed"; exit 1; }
+
+echo "APK built successfully"
+echo ""
+
+# Locate and rename the APK
+echo "Finalizing APK..."
+
+# Find the built APK
+BUILT_APK=$(find "$OUTPUT_DIR" -name "guacd-*.apk" -type f | head -1)
+if [ -z "$BUILT_APK" ]; then
+    echo "ERROR: APK file not found in $OUTPUT_DIR"
+    ls -la "$OUTPUT_DIR"
     exit 1
 fi
 
-# Copy APK to local temp location
-TEMP_APK="/tmp/guacd-temp-$$.apk"
-docker cp "cyolo-apk-builder:$APK_PATH" "$TEMP_APK"
-
 # Compute SHA256 hash (first 16 chars, same as IDAC)
-APK_HASH=$(sha256sum "$TEMP_APK" | cut -c1-16)
+APK_HASH=$(sha256sum "$BUILT_APK" | cut -c1-16)
 
-# Final APK name matches IDAC convention: {component}-{version}-{arch}-{hash}.apk
+# Final APK name matches convention: {component}-{version}-{arch}-{hash}.apk
 FINAL_APK_NAME="guacd-${GUACD_VERSION}-${ARCH}-${APK_HASH}.apk"
 
-# Copy to output with final name
-cp "$TEMP_APK" "$OUTPUT_DIR/$FINAL_APK_NAME"
-rm "$TEMP_APK"
+# Rename to final name
+mv "$BUILT_APK" "$OUTPUT_DIR/$FINAL_APK_NAME"
 
 echo "   APK: $FINAL_APK_NAME"
 echo "   Location: $OUTPUT_DIR/$FINAL_APK_NAME"
 echo ""
 
 # Display APK info
-echo "📊 APK Information:"
+echo "APK Information:"
 echo "   Size: $(ls -lh "$OUTPUT_DIR/$FINAL_APK_NAME" | awk '{print $5}')"
 echo "   Hash: $APK_HASH"
-echo ""
 echo "   Bundled libraries: $BUNDLED_COUNT shared objects"
 echo ""
 echo "   Contents (first 25 files):"
@@ -213,14 +222,13 @@ tar -tzf "$OUTPUT_DIR/$FINAL_APK_NAME" | head -25
 echo "   ... (truncated)"
 echo ""
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✅ Build complete!"
+echo "=================================================="
+echo "Build complete!"
 echo ""
 echo "APK package ready:"
 echo "  $OUTPUT_DIR/$FINAL_APK_NAME"
 echo ""
 echo "This is a self-contained package with all dependencies bundled."
-echo "It can run on Alpine 3.22+ despite being built on Alpine 3.18.6."
 echo ""
 echo "Next steps:"
 echo "  1. Test extraction:"

@@ -50,78 +50,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Prepare build environment
-        run: |
-          echo "Building guacd APK for ${{ matrix.arch }}"
-          mkdir -p output
-      
-      - name: Update APKBUILD version and architecture
+      - name: Update APKBUILD version
         run: |
           cd apk
           sed -i "s/^pkgver=.*/pkgver=${{ needs.build-info.outputs.version }}/" APKBUILD
           sed -i "s/^pkgrel=.*/pkgrel=${{ needs.build-info.outputs.release }}/" APKBUILD
           
-          # Set architecture for this build
-          if [ "${{ matrix.arch }}" = "aarch64" ]; then
-            sed -i 's/^arch=.*/arch="aarch64"/' APKBUILD
-          elif [ "${{ matrix.arch }}" = "x86_64" ]; then
-            sed -i 's/^arch=.*/arch="x86_64"/' APKBUILD
-          fi
-          
           echo "Updated APKBUILD:"
-          grep -E "^(pkgver|pkgrel|arch)=" APKBUILD
+          grep -E "^(pkgver|pkgrel)=" APKBUILD
       
-      - name: Build APK (Docker)
+      - name: Build APK
         run: |
-          # Use Alpine 3.18 for building (matches Dockerfile)
-          docker run --rm \
-            --privileged \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v ${{ github.workspace }}:/src:ro \
-            -v ${{ github.workspace }}/output:/output \
-            -w /tmp/build \
-            alpine:3.18.6 \
-            sh -c '
-              set -e
-              
-              echo "Installing build dependencies..."
-              apk add --no-cache alpine-sdk abuild docker
-              
-              # Setup abuild
-              abuild-keygen -a -n
-              cp /root/.abuild/*.rsa.pub /etc/apk/keys/
-              
-              # Copy source
-              cp -r /src/. /tmp/build/
-              
-              echo "Building APK..."
-              cd /tmp/build/apk
-              abuild -r -F
-              
-              # Copy result
-              find /root/packages -name "*.apk" -exec cp {} /output/ \;
-              
-              echo "Build complete!"
-              ls -lh /output/
-            '
-      
-      - name: Verify APK
-        run: |
-          echo "APK Contents:"
-          tar -tzf output/*.apk | head -30
-          
-          echo ""
-          echo "APK Size:"
-          ls -lh output/*.apk
+          chmod +x apk/build-apk.sh
+          ./apk/build-apk.sh
       
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: guacd-${{ needs.build-info.outputs.version }}-r${{ needs.build-info.outputs.release }}-${{ matrix.arch }}
-          path: output/*.apk
+          path: /tmp/cyolo-apk-output/*.apk
           if-no-files-found: error
 
   upload-to-s3:
@@ -173,4 +120,3 @@ jobs:
           done
           
           echo "Upload complete!"
-
