@@ -100,7 +100,9 @@ jobs:
           VERSION="${{ needs.build-info.outputs.version }}"
           RELEASE="${{ needs.build-info.outputs.release }}"
           S3_BUCKET="packages.cyolo.co"
-          S3_PREFIX="alpine/latest"
+          
+          # New S3 structure: {component}/{version}/{arch}/
+          S3_PREFIX="guacd/${VERSION}"
           
           echo "Uploading to s3://${S3_BUCKET}/${S3_PREFIX}/"
           
@@ -116,9 +118,25 @@ jobs:
               echo "Uploading: $filename -> $dest_path"
               aws s3 cp "$apk" "s3://${S3_BUCKET}/${dest_path}"
               
-              # Calculate SHA256
+              # Calculate full SHA256
               sha256=$(sha256sum "$apk" | awk '{print $1}')
               echo "$sha256" | aws s3 cp - "s3://${S3_BUCKET}/${dest_path}.sha256"
+              
+              # Create and upload metadata.json
+              size_compressed=$(stat -c%s "$apk" 2>/dev/null || stat -f%z "$apk")
+              cat > metadata.json << EOF
+          {
+            "component": "guacd",
+            "version": "${VERSION}",
+            "release": ${RELEASE},
+            "architecture": "${arch}",
+            "sha256": "${sha256}",
+            "size_compressed": ${size_compressed},
+            "built_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          }
+          EOF
+              aws s3 cp metadata.json "s3://${S3_BUCKET}/${dest_path}.metadata.json"
+              echo "  Uploaded metadata: ${dest_path}.metadata.json"
             fi
           done
           

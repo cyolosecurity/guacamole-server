@@ -247,8 +247,8 @@ fi
 # Compute SHA256 hash (first 16 chars, same as IDAC)
 APK_HASH=$(sha256sum "$BUILT_APK" | cut -c1-16)
 
-# Final APK name matches convention: {component}-{version}-{arch}-{hash}.apk
-FINAL_APK_NAME="guacd-${GUACD_VERSION}-${ARCH}-${APK_HASH}.apk"
+# Final APK name matches convention: {component}-{version}-r{release}-{arch}-{hash}.apk
+FINAL_APK_NAME="guacd-${GUACD_VERSION}-r${GUACD_RELEASE}-${ARCH}-${APK_HASH}.apk"
 
 # Rename to final name
 mv "$BUILT_APK" "$OUTPUT_DIR/$FINAL_APK_NAME"
