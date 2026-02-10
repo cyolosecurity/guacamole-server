@@ -40,7 +40,8 @@ jobs:
           echo "=================================================="
 
   # ============================================================================
-  # PHASE 2: Build and push Docker image (idempotent - skips if tag exists)
+  # PHASE 2: Build and push Docker image (idempotent — skips if tag exists)
+  #          Runs in PARALLEL with build-apk-per-arch
   # ============================================================================
   build-and-push-docker:
     runs-on: ubuntu-latest
@@ -104,10 +105,11 @@ jobs:
           echo "ARM64 Docker digest: $ARM64_DIGEST"
 
   # ============================================================================
-  # PHASE 3: Build APKs and upload to S3 (idempotent - skips if APK exists)
+  # PHASE 2b: Build APKs per architecture (idempotent — skips if APK in S3)
+  #           Runs in PARALLEL with build-and-push-docker
   # ============================================================================
   build-apk-per-arch:
-    needs: [read-version, build-and-push-docker]
+    needs: read-version
     strategy:
       matrix:
         arch: [aarch64, x86_64]
@@ -129,7 +131,7 @@ jobs:
             echo "APK for ${{ matrix.arch }} already exists at s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX} — skipping build"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "APK for ${{ matrix.arch }} does not exist — will build and upload"
+            echo "APK for ${{ matrix.arch }} does not exist — will build"
           fi
 
       - name: Checkout code
@@ -161,54 +163,102 @@ jobs:
           chmod +x apk/build-apk.sh
           ./apk/build-apk.sh ${{ matrix.arch }}
 
-      - name: Upload APK to S3 with metadata
+      - name: Upload APK artifact
         if: steps.check-apk.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.COMPONENT }}-${{ needs.read-version.outputs.apk_version }}-${{ matrix.arch }}
+          path: /tmp/cyolo-apk-output/*.apk
+          if-no-files-found: error
+
+  # ============================================================================
+  # PHASE 3: Upload APKs to S3 with Docker digest in metadata
+  #           Waits for BOTH Docker and APK builds to complete
+  # ============================================================================
+  upload-to-s3:
+    needs: [read-version, build-and-push-docker, build-apk-per-arch]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+
+      - name: Download all APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: ${{ env.COMPONENT }}-*
+        continue-on-error: true
+
+      - name: Display artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          find artifacts -type f -name "*.apk" -exec ls -lh {} \; 2>/dev/null || echo "  (no new APKs to upload)"
+          echo ""
+          echo "AMD64 Docker digest: ${{ needs.build-and-push-docker.outputs.digest-amd64 }}"
+          echo "ARM64 Docker digest: ${{ needs.build-and-push-docker.outputs.digest-arm64 }}"
+
+      - name: Upload APKs to S3 with metadata
         run: |
           APK_VERSION="${{ needs.read-version.outputs.apk_version }}"
-          ARCH="${{ matrix.arch }}"
+          DIGEST_AMD64="${{ needs.build-and-push-docker.outputs.digest-amd64 }}"
+          DIGEST_ARM64="${{ needs.build-and-push-docker.outputs.digest-arm64 }}"
 
-          # Map APK arch to Docker digest
-          if [ "$ARCH" == "x86_64" ]; then
-            DOCKER_DIGEST="${{ needs.build-and-push-docker.outputs.digest-amd64 }}"
-          else
-            DOCKER_DIGEST="${{ needs.build-and-push-docker.outputs.digest-arm64 }}"
+          shopt -s nullglob
+          apk_files=(artifacts/*/*.apk)
+          if [ ${#apk_files[@]} -eq 0 ]; then
+            echo "No new APKs to upload — all architectures already released"
+            exit 0
           fi
 
-          S3_PREFIX="release/${{ env.COMPONENT }}/${APK_VERSION}/${ARCH}"
+          for apk in "${apk_files[@]}"; do
+            # Extract arch from artifact directory name
+            dir_name=$(basename "$(dirname "$apk")")
+            arch=$(echo "$dir_name" | grep -oE '(aarch64|x86_64)')
 
-          # Find the built APK
-          APK_FILE=$(find /tmp/cyolo-apk-output -name "${{ env.COMPONENT }}-*.apk" -type f | head -1)
-          if [ -z "$APK_FILE" ]; then
-            echo "ERROR: APK file not found"
-            exit 1
-          fi
+            # Map APK arch to Docker digest
+            if [ "$arch" == "x86_64" ]; then
+              DOCKER_DIGEST="$DIGEST_AMD64"
+            else
+              DOCKER_DIGEST="$DIGEST_ARM64"
+            fi
 
-          FILENAME=$(basename "$APK_FILE")
-          SHA256=$(sha256sum "$APK_FILE" | awk '{print $1}')
-          SIZE=$(stat -c%s "$APK_FILE" 2>/dev/null || stat -f%z "$APK_FILE")
+            filename=$(basename "$apk")
+            S3_PREFIX="release/${{ env.COMPONENT }}/${APK_VERSION}/${arch}"
 
-          echo "Uploading ${FILENAME} to s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/"
-          echo "  Docker digest: ${DOCKER_DIGEST}"
+            echo "Uploading: ${filename}"
+            echo "  S3 path: s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${filename}"
+            echo "  Docker digest: ${DOCKER_DIGEST}"
 
-          # Upload APK
-          aws s3 cp "$APK_FILE" "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${FILENAME}"
+            # Upload APK
+            aws s3 cp "$apk" "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${filename}"
 
-          # Upload SHA256
-          echo "$SHA256" | aws s3 cp - "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${FILENAME}.sha256"
+            # Upload SHA256
+            sha256=$(sha256sum "$apk" | awk '{print $1}')
+            echo "$sha256" | aws s3 cp - "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${filename}.sha256"
 
-          # Upload metadata
-          cat > metadata.json << EOF
+            # Upload metadata
+            size=$(stat -c%s "$apk" 2>/dev/null || stat -f%z "$apk")
+            cat > metadata.json << EOF
           {
             "component": "${{ env.COMPONENT }}",
             "version": "${APK_VERSION}",
             "release": 1,
-            "architecture": "${ARCH}",
-            "sha256": "${SHA256}",
+            "architecture": "${arch}",
+            "sha256": "${sha256}",
             "docker_digest": "${DOCKER_DIGEST}",
-            "size_compressed": ${SIZE},
+            "size_compressed": ${size},
             "built_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           }
           EOF
-          aws s3 cp metadata.json "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${FILENAME}.metadata.json"
+            aws s3 cp metadata.json "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${filename}.metadata.json"
+            echo "  Done!"
+          done
 
+          echo ""
           echo "Upload complete!"
+          echo "Docker Image: ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }}"
+          echo "APK Version: ${APK_VERSION}"
