@@ -113,7 +113,12 @@ jobs:
     strategy:
       matrix:
         arch: [aarch64, x86_64]
-    runs-on: ubuntu-latest
+        include:
+          - arch: aarch64
+            runner: ubuntu-24.04-2core-arm
+          - arch: x86_64
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -137,12 +142,6 @@ jobs:
       - name: Checkout code
         if: steps.check-apk.outputs.exists != 'true'
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        if: steps.check-apk.outputs.exists != 'true'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64,amd64
 
       - name: Set up Docker Buildx
         if: steps.check-apk.outputs.exists != 'true'
