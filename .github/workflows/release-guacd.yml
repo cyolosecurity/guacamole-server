@@ -115,7 +115,7 @@ jobs:
         arch: [aarch64, x86_64]
         include:
           - arch: aarch64
-            runner: ubuntu-24.04-2core-arm
+            runner: ubuntu-24.04-arm
           - arch: x86_64
             runner: ubuntu-latest
     runs-on: ${{ matrix.runner }}
