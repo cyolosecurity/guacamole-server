@@ -40,15 +40,19 @@ jobs:
           echo "=================================================="
 
   # ============================================================================
-  # PHASE 2: Build and push Docker image (idempotent — skips if tag exists)
+  # PHASE 2: Build Docker image per platform (native runners, no QEMU)
   #          Runs in PARALLEL with build-apk-per-arch
   # ============================================================================
-  build-and-push-docker:
-    runs-on: ubuntu-latest
+  build-docker-per-platform:
     needs: read-version
-    outputs:
-      digest-amd64: ${{ steps.get-digests.outputs.digest-amd64 }}
-      digest-arm64: ${{ steps.get-digests.outputs.digest-arm64 }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -71,24 +75,80 @@ jobs:
         if: steps.check-docker.outputs.exists != 'true'
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push by digest
         if: steps.check-docker.outputs.exists != 'true'
-        uses: docker/setup-qemu-action@v3
+        id: build
+        uses: docker/build-push-action@v6
         with:
-          platforms: arm64,amd64
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        if: steps.check-docker.outputs.exists != 'true'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+          echo "Digest for ${{ matrix.platform }}: $digest"
+
+      - name: Upload digest artifact
+        if: steps.check-docker.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-digests-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ============================================================================
+  # PHASE 2b: Merge Docker manifests and create multi-arch tag
+  # ============================================================================
+  merge-docker-manifest:
+    needs: [read-version, build-docker-per-platform]
+    runs-on: ubuntu-latest
+    outputs:
+      digest-amd64: ${{ steps.get-digests.outputs.digest-amd64 }}
+      digest-arm64: ${{ steps.get-digests.outputs.digest-arm64 }}
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push guacd Docker Image
+      - name: Check if Docker tag already exists
+        id: check-docker
+        run: |
+          if docker manifest inspect ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }} > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download digest artifacts
         if: steps.check-docker.outputs.exists != 'true'
-        uses: docker/build-push-action@v5
+        uses: actions/download-artifact@v4
         with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }}
-          platforms: linux/amd64,linux/arm64
-          push: true
+          path: /tmp/digests
+          pattern: docker-digests-*
+          merge-multiple: true
+
+      - name: Create manifest list and push
+        if: steps.check-docker.outputs.exists != 'true'
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }} \
+            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
 
       - name: Get per-architecture digests
         id: get-digests
@@ -105,15 +165,20 @@ jobs:
           echo "ARM64 Docker digest: $ARM64_DIGEST"
 
   # ============================================================================
-  # PHASE 2b: Build APKs per architecture (idempotent — skips if APK in S3)
-  #           Runs in PARALLEL with build-and-push-docker
+  # PHASE 2c: Build APKs per architecture (idempotent — skips if APK in S3)
+  #           Runs in PARALLEL with build-docker-per-platform
   # ============================================================================
   build-apk-per-arch:
     needs: read-version
     strategy:
       matrix:
         arch: [aarch64, x86_64]
-    runs-on: ubuntu-latest
+        include:
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+          - arch: x86_64
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -137,12 +202,6 @@ jobs:
       - name: Checkout code
         if: steps.check-apk.outputs.exists != 'true'
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        if: steps.check-apk.outputs.exists != 'true'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64,amd64
 
       - name: Set up Docker Buildx
         if: steps.check-apk.outputs.exists != 'true'
@@ -176,7 +235,7 @@ jobs:
   #           Waits for BOTH Docker and APK builds to complete
   # ============================================================================
   upload-to-s3:
-    needs: [read-version, build-and-push-docker, build-apk-per-arch]
+    needs: [read-version, merge-docker-manifest, build-apk-per-arch]
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
@@ -198,14 +257,14 @@ jobs:
           echo "Downloaded artifacts:"
           find artifacts -type f -name "*.apk" -exec ls -lh {} \; 2>/dev/null || echo "  (no new APKs to upload)"
           echo ""
-          echo "AMD64 Docker digest: ${{ needs.build-and-push-docker.outputs.digest-amd64 }}"
-          echo "ARM64 Docker digest: ${{ needs.build-and-push-docker.outputs.digest-arm64 }}"
+          echo "AMD64 Docker digest: ${{ needs.merge-docker-manifest.outputs.digest-amd64 }}"
+          echo "ARM64 Docker digest: ${{ needs.merge-docker-manifest.outputs.digest-arm64 }}"
 
       - name: Upload APKs to S3 with metadata
         run: |
           APK_VERSION="${{ needs.read-version.outputs.apk_version }}"
-          DIGEST_AMD64="${{ needs.build-and-push-docker.outputs.digest-amd64 }}"
-          DIGEST_ARM64="${{ needs.build-and-push-docker.outputs.digest-arm64 }}"
+          DIGEST_AMD64="${{ needs.merge-docker-manifest.outputs.digest-amd64 }}"
+          DIGEST_ARM64="${{ needs.merge-docker-manifest.outputs.digest-arm64 }}"
 
           shopt -s nullglob
           apk_files=(artifacts/*/*.apk)
