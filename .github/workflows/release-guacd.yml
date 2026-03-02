@@ -1,0 +1,323 @@
+name: Release guacd (Docker + APK)
+
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY_IMAGE: cyolosec/guacd
+  RELEASE_BUCKET: repo.cyolo.io
+  COMPONENT: guacd
+
+jobs:
+  # ============================================================================
+  # PHASE 1: Read version from .source_version
+  # ============================================================================
+  read-version:
+    runs-on: ubuntu-latest
+    outputs:
+      docker_version: ${{ steps.version.outputs.docker_version }}
+      apk_version: ${{ steps.version.outputs.apk_version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Read version from .source_version
+        id: version
+        run: |
+          DOCKER_VERSION=$(head -1 .source_version | tr -d '[:space:]')
+          APK_VERSION=$(echo "$DOCKER_VERSION" | sed 's/-/./g')
+
+          echo "docker_version=$DOCKER_VERSION" >> $GITHUB_OUTPUT
+          echo "apk_version=$APK_VERSION" >> $GITHUB_OUTPUT
+
+          echo "=================================================="
+          echo "Releasing guacd"
+          echo "  Docker version: $DOCKER_VERSION"
+          echo "  APK version:    $APK_VERSION"
+          echo "  Docker image:   ${{ env.REGISTRY_IMAGE }}:$DOCKER_VERSION"
+          echo "  APK release:    1 (hardcoded)"
+          echo "  Architectures:  aarch64, x86_64"
+          echo "=================================================="
+
+  # ============================================================================
+  # PHASE 2: Build Docker image per platform (native runners, no QEMU)
+  #          Runs in PARALLEL with build-apk-per-arch
+  # ============================================================================
+  build-docker-per-platform:
+    needs: read-version
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Check if Docker tag already exists
+        id: check-docker
+        run: |
+          if docker manifest inspect ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }} > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Docker image ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }} already exists — skipping build"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Docker image does not exist — will build and push"
+          fi
+
+      - name: Checkout code
+        if: steps.check-docker.outputs.exists != 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push by digest
+        if: steps.check-docker.outputs.exists != 'true'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        if: steps.check-docker.outputs.exists != 'true'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+          echo "Digest for ${{ matrix.platform }}: $digest"
+
+      - name: Upload digest artifact
+        if: steps.check-docker.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-digests-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ============================================================================
+  # PHASE 2b: Merge Docker manifests and create multi-arch tag
+  # ============================================================================
+  merge-docker-manifest:
+    needs: [read-version, build-docker-per-platform]
+    runs-on: ubuntu-latest
+    outputs:
+      digest-amd64: ${{ steps.get-digests.outputs.digest-amd64 }}
+      digest-arm64: ${{ steps.get-digests.outputs.digest-arm64 }}
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check if Docker tag already exists
+        id: check-docker
+        run: |
+          if docker manifest inspect ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }} > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download digest artifacts
+        if: steps.check-docker.outputs.exists != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: docker-digests-*
+          merge-multiple: true
+
+      - name: Create manifest list and push
+        if: steps.check-docker.outputs.exists != 'true'
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }} \
+            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+
+      - name: Get per-architecture digests
+        id: get-digests
+        run: |
+          IMAGE="${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }}"
+
+          AMD64_DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{range .Manifest.Manifests}}{{if eq .Platform.Architecture "amd64"}}{{.Digest}}{{end}}{{end}}')
+          ARM64_DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{range .Manifest.Manifests}}{{if eq .Platform.Architecture "arm64"}}{{.Digest}}{{end}}{{end}}')
+
+          echo "digest-amd64=$AMD64_DIGEST" >> $GITHUB_OUTPUT
+          echo "digest-arm64=$ARM64_DIGEST" >> $GITHUB_OUTPUT
+
+          echo "AMD64 Docker digest: $AMD64_DIGEST"
+          echo "ARM64 Docker digest: $ARM64_DIGEST"
+
+  # ============================================================================
+  # PHASE 2c: Build APKs per architecture (idempotent — skips if APK in S3)
+  #           Runs in PARALLEL with build-docker-per-platform
+  # ============================================================================
+  build-apk-per-arch:
+    needs: read-version
+    strategy:
+      matrix:
+        arch: [aarch64, x86_64]
+        include:
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+          - arch: x86_64
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+
+      - name: Check if APK already exists in S3
+        id: check-apk
+        run: |
+          S3_PREFIX="release/${{ env.COMPONENT }}/${{ needs.read-version.outputs.apk_version }}/${{ matrix.arch }}/"
+          if aws s3 ls "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}" 2>/dev/null | grep -q '\.apk$'; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "APK for ${{ matrix.arch }} already exists at s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX} — skipping build"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "APK for ${{ matrix.arch }} does not exist — will build"
+          fi
+
+      - name: Checkout code
+        if: steps.check-apk.outputs.exists != 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        if: steps.check-apk.outputs.exists != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Update APKBUILD version
+        if: steps.check-apk.outputs.exists != 'true'
+        run: |
+          cd apk
+          sed -i "s/^pkgver=.*/pkgver=${{ needs.read-version.outputs.apk_version }}/" APKBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" APKBUILD
+          echo "Updated APKBUILD:"
+          grep -E "^(pkgver|pkgrel)=" APKBUILD
+
+      - name: Build APK
+        if: steps.check-apk.outputs.exists != 'true'
+        run: |
+          chmod +x apk/build-apk.sh
+          ./apk/build-apk.sh ${{ matrix.arch }}
+
+      - name: Upload APK artifact
+        if: steps.check-apk.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.COMPONENT }}-${{ needs.read-version.outputs.apk_version }}-${{ matrix.arch }}
+          path: /tmp/cyolo-apk-output/*.apk
+          if-no-files-found: error
+
+  # ============================================================================
+  # PHASE 3: Upload APKs to S3 with Docker digest in metadata
+  #           Waits for BOTH Docker and APK builds to complete
+  # ============================================================================
+  upload-to-s3:
+    needs: [read-version, merge-docker-manifest, build-apk-per-arch]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+
+      - name: Download all APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: ${{ env.COMPONENT }}-*
+        continue-on-error: true
+
+      - name: Display artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          find artifacts -type f -name "*.apk" -exec ls -lh {} \; 2>/dev/null || echo "  (no new APKs to upload)"
+          echo ""
+          echo "AMD64 Docker digest: ${{ needs.merge-docker-manifest.outputs.digest-amd64 }}"
+          echo "ARM64 Docker digest: ${{ needs.merge-docker-manifest.outputs.digest-arm64 }}"
+
+      - name: Upload APKs to S3 with metadata
+        run: |
+          APK_VERSION="${{ needs.read-version.outputs.apk_version }}"
+          DIGEST_AMD64="${{ needs.merge-docker-manifest.outputs.digest-amd64 }}"
+          DIGEST_ARM64="${{ needs.merge-docker-manifest.outputs.digest-arm64 }}"
+
+          shopt -s nullglob
+          apk_files=(artifacts/*/*.apk)
+          if [ ${#apk_files[@]} -eq 0 ]; then
+            echo "No new APKs to upload — all architectures already released"
+            exit 0
+          fi
+
+          for apk in "${apk_files[@]}"; do
+            # Extract arch from artifact directory name
+            dir_name=$(basename "$(dirname "$apk")")
+            arch=$(echo "$dir_name" | grep -oE '(aarch64|x86_64)')
+
+            # Map APK arch to Docker digest
+            if [ "$arch" == "x86_64" ]; then
+              DOCKER_DIGEST="$DIGEST_AMD64"
+            else
+              DOCKER_DIGEST="$DIGEST_ARM64"
+            fi
+
+            filename=$(basename "$apk")
+            S3_PREFIX="release/${{ env.COMPONENT }}/${APK_VERSION}/${arch}"
+
+            echo "Uploading: ${filename}"
+            echo "  S3 path: s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${filename}"
+            echo "  Docker digest: ${DOCKER_DIGEST}"
+
+            # Upload APK
+            aws s3 cp "$apk" "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${filename}"
+
+            # Upload SHA256
+            sha256=$(sha256sum "$apk" | awk '{print $1}')
+            echo "$sha256" | aws s3 cp - "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${filename}.sha256"
+
+            # Upload metadata
+            size=$(stat -c%s "$apk" 2>/dev/null || stat -f%z "$apk")
+            cat > metadata.json << EOF
+          {
+            "component": "${{ env.COMPONENT }}",
+            "version": "${APK_VERSION}",
+            "release": 1,
+            "architecture": "${arch}",
+            "sha256": "${sha256}",
+            "docker_digest": "${DOCKER_DIGEST}",
+            "size_compressed": ${size},
+            "built_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          }
+          EOF
+            aws s3 cp metadata.json "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}/${filename}.metadata.json"
+            echo "  Done!"
+          done
+
+          echo ""
+          echo "Upload complete!"
+          echo "Docker Image: ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }}"
+          echo "APK Version: ${APK_VERSION}"

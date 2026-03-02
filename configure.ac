@@ -29,6 +29,17 @@ LT_INIT([dlopen])
 AC_CONFIG_HEADER([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 
+# Cyolo build version (read from .source_version if available, overridable via env)
+AC_ARG_VAR([CYOLO_VERSION], [Cyolo build version string])
+if test "x$CYOLO_VERSION" = "x"; then
+    if test -f "$srcdir/.source_version"; then
+        CYOLO_VERSION=`head -1 $srcdir/.source_version`
+    else
+        CYOLO_VERSION="$PACKAGE_VERSION"
+    fi
+fi
+AC_DEFINE_UNQUOTED([CYOLO_GUACD_VERSION], ["$CYOLO_VERSION"], [Cyolo guacd build version])
+
 # Use TAP test driver for tests (part of automake)
 AC_REQUIRE_AUX_FILE([tap-driver.sh])
 
