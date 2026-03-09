@@ -55,10 +55,14 @@ if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^$DOCKER_IMAGE
     echo "   Platform: $DOCKER_PLATFORM"
     echo "   This will compile guacd and all dependencies (~5-10 minutes)"
     cd "$GUACAMOLE_SERVER_DIR"
+    # Override PREFIX_DIR so FreeRDP's compiled-in plugin path matches the
+    # launcher's runtime path (/host/cyolo/software/guacd is a stable symlink
+    # maintained by the launcher pointing to the versioned install directory).
     docker buildx build -t "$DOCKER_IMAGE" \
         --platform "$DOCKER_PLATFORM" \
         --target builder \
         --build-arg ALPINE_BASE_IMAGE=3.18.6 \
+        --build-arg PREFIX_DIR=/host/cyolo/software/guacd \
         --load \
         -f Dockerfile \
         . || { echo "ERROR: Docker build failed"; exit 1; }
@@ -90,9 +94,10 @@ trap cleanup EXIT
 echo "Extracting guacd artifacts..."
 mkdir -p "$EXTRACT_DIR/bundled-libs"
 
-# Extract /opt/guacamole from the image
+# Extract build artifacts from the image (PREFIX_DIR=/host/cyolo/software/guacd)
+# Rename to "guacamole" locally so the rest of the script and APKBUILD work unchanged.
 CONTAINER_ID=$(docker create "$DOCKER_IMAGE")
-docker cp "$CONTAINER_ID:/opt/guacamole" "$EXTRACT_DIR/"
+docker cp "$CONTAINER_ID:/host/cyolo/software/guacd" "$EXTRACT_DIR/guacamole"
 docker rm "$CONTAINER_ID" > /dev/null
 
 echo "Artifacts extracted"
