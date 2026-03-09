@@ -19,9 +19,18 @@ if [ -d "${INSTALL_DIR}/share/fonts" ] && [ ! -f /tmp/guacd-fonts.conf ]; then
 <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
 <fontconfig>
     <dir>${INSTALL_DIR}/share/fonts</dir>
-    <match target="pattern">
-        <edit name="family" mode="append_last"><string>DejaVu Sans Mono</string></edit>
-    </match>
+    <alias>
+        <family>monospace</family>
+        <prefer><family>DejaVu Sans Mono</family></prefer>
+    </alias>
+    <alias>
+        <family>sans-serif</family>
+        <prefer><family>DejaVu Sans</family></prefer>
+    </alias>
+    <alias>
+        <family>serif</family>
+        <prefer><family>DejaVu Serif</family></prefer>
+    </alias>
 </fontconfig>
 FONTCONF
 fi
