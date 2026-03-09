@@ -13,7 +13,7 @@ export LC_ALL=C.UTF-8
 
 # Configure fontconfig to use bundled fonts (needed for SSH/telnet terminal rendering).
 # Generate a minimal config at runtime so the font directory path is always correct.
-if [ -d "${INSTALL_DIR}/share/fonts" ] && [ ! -f /tmp/guacd-fonts.conf ]; then
+if [ -d "${INSTALL_DIR}/share/fonts" ]; then
     cat > /tmp/guacd-fonts.conf <<FONTCONF
 <?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
