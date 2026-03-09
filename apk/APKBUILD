@@ -8,7 +8,7 @@ arch="aarch64 x86_64"
 license="Apache-2.0"
 depends=""
 makedepends=""
-source="guacamole.tar.gz bundled-libs.tar.gz entrypoint.sh"
+source="guacamole.tar.gz bundled-libs.tar.gz fonts.tar.gz entrypoint.sh"
 options="!check !tracedeps !strip net"
 
 # Installation path follows same pattern as IDAC: /software/{component}/{version}/
@@ -45,6 +45,14 @@ package() {
         cp "$srcdir/bundled-libs"/* "$pkgdir$_prefix/lib/"
     else
         echo "   Warning: No bundled libraries found - package may not be portable!"
+    fi
+    
+    # Install fonts for SSH/telnet terminal rendering
+    if [ -d "$srcdir/fonts/share/fonts" ]; then
+        install -dm755 "$pkgdir$_prefix/share/fonts"
+        cp -r "$srcdir/fonts/share/fonts/"* "$pkgdir$_prefix/share/fonts/"
+        font_count=$(find "$pkgdir$_prefix/share/fonts" -name "*.ttf" | wc -l)
+        echo "   Installed $font_count font files"
     fi
     
     # Install entrypoint wrapper (sets LD_LIBRARY_PATH)

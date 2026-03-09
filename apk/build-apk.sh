@@ -160,6 +160,15 @@ else
     echo "   Successfully copied $dep_count out of $NUM_DEPS libraries"
 fi
 
+# Extract fonts for bundling (SSH/telnet terminal rendering needs them)
+echo ""
+echo "Extracting fonts for bundling..."
+mkdir -p "$EXTRACT_DIR/fonts"
+docker exec "$DEPS_CONTAINER" sh -c 'tar -cf - /usr/share/fonts/dejavu/ /etc/fonts/fonts.conf 2>/dev/null' \
+    | tar -xf - -C "$EXTRACT_DIR/fonts/" --strip-components=1 2>/dev/null || true
+FONT_COUNT=$(find "$EXTRACT_DIR/fonts" -name "*.ttf" 2>/dev/null | wc -l)
+echo "   Extracted $FONT_COUNT font files"
+
 # Cleanup deps container
 docker stop "$DEPS_CONTAINER" > /dev/null
 docker rm "$DEPS_CONTAINER" > /dev/null
@@ -182,6 +191,7 @@ mkdir -p "$BUILD_DIR"
 # Create tarballs for APK sources
 tar -czf "$BUILD_DIR/guacamole.tar.gz" -C "$EXTRACT_DIR" guacamole
 tar -czf "$BUILD_DIR/bundled-libs.tar.gz" -C "$EXTRACT_DIR" bundled-libs
+tar -czf "$BUILD_DIR/fonts.tar.gz" -C "$EXTRACT_DIR" fonts
 
 # Copy APKBUILD and entrypoint
 cp "$SCRIPT_DIR/APKBUILD" "$BUILD_DIR/"
