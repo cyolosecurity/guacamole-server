@@ -11,6 +11,31 @@ INSTALL_DIR="$(dirname "$SCRIPT_DIR")"
 export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:${LD_LIBRARY_PATH}"
 export LC_ALL=C.UTF-8
 
+# Configure fontconfig to use bundled fonts (needed for SSH/telnet terminal rendering).
+# Generate a minimal config at runtime so the font directory path is always correct.
+if [ -d "${INSTALL_DIR}/share/fonts" ]; then
+    cat > /tmp/guacd-fonts.conf <<FONTCONF
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+    <dir>${INSTALL_DIR}/share/fonts</dir>
+    <alias>
+        <family>monospace</family>
+        <prefer><family>DejaVu Sans Mono</family></prefer>
+    </alias>
+    <alias>
+        <family>sans-serif</family>
+        <prefer><family>DejaVu Sans</family></prefer>
+    </alias>
+    <alias>
+        <family>serif</family>
+        <prefer><family>DejaVu Serif</family></prefer>
+    </alias>
+</fontconfig>
+FONTCONF
+fi
+export FONTCONFIG_FILE="${FONTCONFIG_FILE:-/tmp/guacd-fonts.conf}"
+
 # Default configuration
 GUACD_LOG_LEVEL="${GUACD_LOG_LEVEL:-info}"
 GUAC_LISTEN_PORT="${GUAC_LISTEN_PORT:-4822}"
