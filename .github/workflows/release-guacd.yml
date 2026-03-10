@@ -63,13 +63,9 @@ jobs:
       - name: Check if Docker tag already exists
         id: check-docker
         run: |
-          if docker manifest inspect ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }} > /dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Docker image ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }} already exists — skipping build"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Docker image does not exist — will build and push"
-          fi
+          # TEMPORARY: Force rebuild to reproduce log viewer issue
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Forcing rebuild (idempotency check bypassed)"
 
       - name: Checkout code
         if: steps.check-docker.outputs.exists != 'true'
@@ -128,11 +124,9 @@ jobs:
       - name: Check if Docker tag already exists
         id: check-docker
         run: |
-          if docker manifest inspect ${{ env.REGISTRY_IMAGE }}:${{ needs.read-version.outputs.docker_version }} > /dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+          # TEMPORARY: Force rebuild to reproduce log viewer issue
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Forcing rebuild (idempotency check bypassed)"
 
       - name: Download digest artifacts
         if: steps.check-docker.outputs.exists != 'true'
@@ -190,14 +184,9 @@ jobs:
       - name: Check if APK already exists in S3
         id: check-apk
         run: |
-          S3_PREFIX="release/${{ env.COMPONENT }}/${{ needs.read-version.outputs.apk_version }}/${{ matrix.arch }}/"
-          if aws s3 ls "s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX}" 2>/dev/null | grep -q '\.apk$'; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "APK for ${{ matrix.arch }} already exists at s3://${{ env.RELEASE_BUCKET }}/${S3_PREFIX} — skipping build"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "APK for ${{ matrix.arch }} does not exist — will build"
-          fi
+          # TEMPORARY: Force rebuild to reproduce log viewer issue
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Forcing APK rebuild for ${{ matrix.arch }} (idempotency check bypassed)"
 
       - name: Checkout code
         if: steps.check-apk.outputs.exists != 'true'
