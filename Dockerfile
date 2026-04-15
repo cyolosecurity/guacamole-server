@@ -201,8 +201,9 @@ COPY --from=deps-collect /bundled-libs/ ${PREFIX_DIR}/lib/
 # Copy build artifacts into this stage (overlays bundled libs with correct symlinks)
 COPY --from=builder ${PREFIX_DIR} ${PREFIX_DIR}
 
-# Install non-library runtime packages (safe to install from any Alpine version)
-RUN apk add --no-cache                \
+# Patch base-image packages and install non-library runtime packages
+RUN apk upgrade --no-cache &&         \
+    apk add --no-cache                \
         ca-certificates               \
         font-noto-cjk                 \
         ghostscript                   \
