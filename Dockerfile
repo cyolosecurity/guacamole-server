@@ -21,8 +21,10 @@
 # Dockerfile for guacamole-server
 #
 
-# The Alpine Linux image that should be used as the basis for the guacd image
+# The Alpine Linux image that should be used as the basis for building guacd
 ARG ALPINE_BASE_IMAGE=3.18.6
+# The Alpine Linux image for the final runtime image (can differ from build)
+ARG ALPINE_RUNTIME_IMAGE=3.23
 FROM alpine:${ALPINE_BASE_IMAGE} AS builder
 
 # Install build dependencies
@@ -145,8 +147,39 @@ RUN ${BUILD_DIR}/src/guacd-docker/bin/list-dependencies.sh \
         ${PREFIX_DIR}/lib/freerdp2/*guac*.so   \
         > ${PREFIX_DIR}/DEPENDENCIES
 
-# Use same Alpine version as the base for the runtime image
-FROM alpine:${ALPINE_BASE_IMAGE}
+######################
+# deps-collect       #
+######################
+# Collect all transitive shared-library dependencies so the runtime image
+# can run on any Alpine version without ABI-mismatch errors.
+FROM alpine:${ALPINE_BASE_IMAGE} AS deps-collect
+
+ARG PREFIX_DIR=/opt/guacamole
+
+COPY --from=builder ${PREFIX_DIR} ${PREFIX_DIR}
+
+# Install the runtime library packages on the *build* Alpine so ldd resolves
+# every transitive .so the binaries need.
+RUN apk add --no-cache \
+        ghostscript \
+        util-linux-login && \
+    xargs apk add --no-cache < ${PREFIX_DIR}/DEPENDENCIES
+
+# Discover and bundle all transitive shared library dependencies
+RUN mkdir -p /bundled-libs && \
+    export LD_LIBRARY_PATH=${PREFIX_DIR}/lib && \
+    { \
+      ldd ${PREFIX_DIR}/sbin/guacd 2>/dev/null; \
+      for f in ${PREFIX_DIR}/lib/*.so* ${PREFIX_DIR}/lib/freerdp2/*.so*; do \
+        [ -f "$f" ] && ldd "$f" 2>/dev/null; \
+      done; \
+    } | grep '=>' | awk '{print $3}' | sort -u | while read -r dep; do \
+      [ -f "$dep" ] && cp -L "$dep" /bundled-libs/; \
+    done && \
+    echo "Bundled $(ls /bundled-libs | wc -l) shared libraries"
+
+# Runtime image — uses a newer Alpine than the build
+FROM alpine:${ALPINE_RUNTIME_IMAGE}
 
 #
 # Base directory for installed build artifacts. See also the
@@ -162,10 +195,13 @@ ENV LC_ALL=C.UTF-8
 ENV LD_LIBRARY_PATH=${PREFIX_DIR}/lib
 ENV GUACD_LOG_LEVEL=info
 
-# Copy build artifacts into this stage
+# Bundled shared libraries (all transitive deps from the build Alpine)
+COPY --from=deps-collect /bundled-libs/ ${PREFIX_DIR}/lib/
+
+# Copy build artifacts into this stage (overlays bundled libs with correct symlinks)
 COPY --from=builder ${PREFIX_DIR} ${PREFIX_DIR}
 
-# Bring runtime environment up to date and install runtime dependencies
+# Install non-library runtime packages (safe to install from any Alpine version)
 RUN apk add --no-cache                \
         ca-certificates               \
         font-noto-cjk                 \
@@ -175,11 +211,7 @@ RUN apk add --no-cache                \
         terminus-font                 \
         ttf-dejavu                    \
         ttf-liberation                \
-        util-linux-login && \
-    xargs apk add --no-cache < ${PREFIX_DIR}/DEPENDENCIES
-
-# Add fonts
-RUN apk add --no-cache font-noto-cjk
+        util-linux-login
 
 # We remove the HEALTHCHECK, as our users are not accustomed to seeing the resulting output when running docker ps
 # Checks the operating status every 5 minutes with a timeout of 5 seconds
