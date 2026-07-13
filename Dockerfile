@@ -59,6 +59,19 @@ COPY . ${BUILD_DIR}
 ARG PREFIX_DIR=/opt/guacamole
 
 #
+# Install prefix compiled into FreeRDP. This determines where FreeRDP looks
+# for its dynamic channel addins (disp, guacsnd, guacai, ...) at runtime:
+#   <prefix>/lib/freerdp2/lib<name>-client.so
+#
+# - Standalone Docker image (default): the absolute ${PREFIX_DIR}. guacd runs
+#   in-place inside the container, so the baked absolute path is always valid.
+# - APK build: apk/build-apk.sh overrides this to "./" so the relocatable
+#   package resolves addins relative to guacd's working directory, which the
+#   APK's entrypoint.sh pins to the install dir.
+#
+ARG FREERDP_INSTALL_PREFIX=${PREFIX_DIR}
+
+#
 # Automatically select the latest versions of each core protocol support
 # library (these can be overridden at build time if a specific version is
 # needed)
@@ -76,6 +89,7 @@ ARG WITH_LIBWEBSOCKETS='v4.3.3'
 #
 
 ARG FREERDP_OPTS="\
+    -DFREERDP_INSTALL_PREFIX=${FREERDP_INSTALL_PREFIX} \
     -DBUILTIN_CHANNELS=OFF \
     -DCHANNEL_URBDRC=OFF \
     -DWITH_ALSA=OFF \

@@ -7,6 +7,11 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="$(dirname "$SCRIPT_DIR")"
 
+# FreeRDP channel addins (disp, guacsnd, guacai, ...) are compiled with a
+# CWD-relative path ("./lib/freerdp2"), so guacd MUST run from the install
+# prefix.
+cd "$INSTALL_DIR" || exit 1
+
 # Set library path for bundled dependencies
 export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:${LD_LIBRARY_PATH}"
 export LC_ALL=C.UTF-8
