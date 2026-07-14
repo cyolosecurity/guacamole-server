@@ -55,14 +55,19 @@ if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^$DOCKER_IMAGE
     echo "   Platform: $DOCKER_PLATFORM"
     echo "   This will compile guacd and all dependencies (~5-10 minutes)"
     cd "$GUACAMOLE_SERVER_DIR"
-    # Override PREFIX_DIR so FreeRDP's compiled-in plugin path matches the
-    # launcher's runtime path (/host/cyolo/software/guacd is a stable symlink
-    # maintained by the launcher pointing to the versioned install directory).
+    # FREERDP_INSTALL_PREFIX=./ makes FreeRDP resolve its channel addins
+    # (disp, guacsnd, guacai, ...) relative to guacd's working directory,
+    # which entrypoint.sh pins to the install dir — so the same APK works
+    # under any CYOLO_HOME (/host/cyolo, /opt/cyolo, /home/cyolo) with no
+    # absolute path baked in. Must be "./", NOT "." (FreeRDP treats "." as
+    # "no prefix" and mis-joins the addin path to the absolute
+    # "/lib/freerdp2"). The standalone Docker image build does not set this
+    # and keeps the upstream absolute prefix (see Dockerfile).
     docker buildx build -t "$DOCKER_IMAGE" \
         --platform "$DOCKER_PLATFORM" \
         --target builder \
         --build-arg ALPINE_BASE_IMAGE=3.18.6 \
-        --build-arg PREFIX_DIR=/host/cyolo/software/guacd \
+        --build-arg FREERDP_INSTALL_PREFIX=./ \
         --load \
         -f Dockerfile \
         . || { echo "ERROR: Docker build failed"; exit 1; }
@@ -94,10 +99,10 @@ trap cleanup EXIT
 echo "Extracting guacd artifacts..."
 mkdir -p "$EXTRACT_DIR/bundled-libs"
 
-# Extract build artifacts from the image (PREFIX_DIR=/host/cyolo/software/guacd)
+# Extract build artifacts from the image (PREFIX_DIR default: /opt/guacamole)
 # Rename to "guacamole" locally so the rest of the script and APKBUILD work unchanged.
 CONTAINER_ID=$(docker create "$DOCKER_IMAGE")
-docker cp "$CONTAINER_ID:/host/cyolo/software/guacd" "$EXTRACT_DIR/guacamole"
+docker cp "$CONTAINER_ID:/opt/guacamole" "$EXTRACT_DIR/guacamole"
 docker rm "$CONTAINER_ID" > /dev/null
 
 echo "Artifacts extracted"
