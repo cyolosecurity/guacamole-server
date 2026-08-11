@@ -35,7 +35,7 @@ jobs:
           echo "  Docker version: $DOCKER_VERSION"
           echo "  APK version:    $APK_VERSION"
           echo "  Docker image:   ${{ env.REGISTRY_IMAGE }}:$DOCKER_VERSION"
-          echo "  APK release:    0 (hardcoded)"
+          echo "  APK release:    1 (hardcoded)"
           echo "  Architectures:  aarch64, x86_64"
           echo "=================================================="
 
@@ -212,7 +212,7 @@ jobs:
         run: |
           cd apk
           sed -i "s/^pkgver=.*/pkgver=${{ needs.read-version.outputs.apk_version }}/" APKBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=0/" APKBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" APKBUILD
           echo "Updated APKBUILD:"
           grep -E "^(pkgver|pkgrel)=" APKBUILD
 
@@ -305,7 +305,7 @@ jobs:
           {
             "component": "${{ env.COMPONENT }}",
             "version": "${APK_VERSION}",
-            "release": 0,
+            "release": 1,
             "architecture": "${arch}",
             "sha256": "${sha256}",
             "docker_digest": "${DOCKER_DIGEST}",
