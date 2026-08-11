@@ -126,6 +126,39 @@ docker exec "$DEPS_CONTAINER" apk add --no-cache \
     cairo openssl1.1-compat libjpeg-turbo libpng libwebp util-linux-misc \
     pango > /dev/null 2>&1
 
+# Also install every runtime package recorded by the builder stage
+# (DEPENDENCIES is generated inside the Docker build by list-dependencies.sh).
+# This mirrors the Dockerfile's deps-collect stage and guarantees ldd can
+# resolve EVERY transitive dependency. Without this, libraries whose packages
+# are missing from the hardcoded list above (e.g. libpulse, required by the
+# VNC and RDP protocol plugins for audio support) fail to resolve and are
+# silently omitted from the bundle, breaking those protocols at runtime.
+echo "   Installing packages from builder DEPENDENCIES manifest..."
+docker exec "$DEPS_CONTAINER" sh -c \
+    'xargs apk add --no-cache < /extract/guacamole/DEPENDENCIES' > /dev/null \
+    || { echo "ERROR: Failed to install packages from DEPENDENCIES manifest"; exit 1; }
+
+# Verify that every shared library dependency now resolves. A single missing
+# library silently breaks a protocol plugin (guacd logs 'Support for protocol
+# "..." is not installed'), so fail the build loudly instead.
+echo "   Verifying all shared library dependencies resolve..."
+UNRESOLVED=$(docker exec "$DEPS_CONTAINER" sh -c '
+    export LD_LIBRARY_PATH=/extract/guacamole/lib:/extract/guacamole/lib/freerdp2
+    {
+        ldd /extract/guacamole/sbin/guacd 2>&1
+        find /extract/guacamole/lib -name "*.so*" -type f 2>/dev/null | while read -r lib; do
+            ldd "$lib" 2>&1 || true
+        done
+    } | grep -E "not found|Error loading" | sort -u
+')
+if [ -n "$UNRESOLVED" ]; then
+    echo "ERROR: Unresolved shared library dependencies detected:"
+    echo "$UNRESOLVED"
+    echo "The resulting APK would be broken. Aborting."
+    exit 1
+fi
+echo "   All shared library dependencies resolve"
+
 # Collect all dependencies from guacd and its libraries
 echo "   Analyzing dependencies with ldd..."
 docker exec "$DEPS_CONTAINER" sh -c '
