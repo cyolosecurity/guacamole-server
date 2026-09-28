@@ -293,8 +293,22 @@ void guac_rdp_client_abort(guac_client* client, freerdp* rdp_inst) {
 
     /* Send error code if an error occurred */
     if (status != GUAC_PROTOCOL_STATUS_SUCCESS) {
+
         guac_protocol_send_error(client->socket, message, status);
         guac_socket_flush(client->socket);
+
+        /* Also send the error to users still on the pending list. Since
+         * GUACAMOLE-1846 (1.5.4), newly-joined users (including the owner)
+         * remain "pending" until a timer promotes them (every 250ms) into the
+         * users list that client->socket broadcasts to. A fast connection
+         * failure (e.g. NLA rejection or TCP refusal in under 250ms) would
+         * otherwise broadcast this error to an empty user list and the client
+         * would never learn why the connection closed (CY-20022). A user is
+         * always on exactly one of the two lists, so this delivers the error
+         * exactly once in the common case. */
+        guac_protocol_send_error(client->pending_socket, message, status);
+        guac_socket_flush(client->pending_socket);
+
     }
 
     /* Log human-readable description of disconnect at info level */
