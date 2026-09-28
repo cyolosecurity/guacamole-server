@@ -1,6 +1,6 @@
 # Maintainer: Cyolo <support@cyolo.io>
 pkgname=guacd
-pkgver=1.5.5.7
+pkgver=1.5.5.8
 pkgrel=1
 pkgdesc="Apache Guacamole proxy daemon (Cyolo build with bundled dependencies)"
 url="https://guacamole.apache.org/"
